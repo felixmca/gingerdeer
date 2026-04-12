@@ -50,15 +50,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   return (
     <div className="db-shell">
       {/* ── Sidebar ── */}
-      <aside className="db-sidebar">
-        <div className="db-sidebar__brand">
-          <a href="/" className="logo" aria-label="Juice for Teams home">
-            <span className="logo__mark" aria-hidden="true" />
-            <span className="logo__text">Juice for Teams</span>
-          </a>
-        </div>
-        <DbSidebarNav />
-      </aside>
+      <DbSidebarNav />
 
       {/* ── Main area ── */}
       <div className="db-main">

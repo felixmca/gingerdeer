@@ -113,8 +113,8 @@ export function DbSubscriptionPage() {
         {/* ── Toolbar ── */}
         <div className="db-orders__toolbar">
           <div className="db-orders__count">
-            <span className="db-orders__count-num">{loading ? "—" : totalCount}</span>
-            <span className="db-orders__count-label">subscription{totalCount !== 1 ? "s" : ""}</span>
+            <span className="db-orders__count-num">{loading ? "—" : visibleSubRows.length}</span>
+            <span className="db-orders__count-label">subscription{visibleSubRows.length !== 1 ? "s" : ""}</span>
           </div>
 
           <div className="db-orders__search-wrap">
