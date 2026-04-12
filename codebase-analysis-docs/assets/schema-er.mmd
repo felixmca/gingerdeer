@@ -1,0 +1,18 @@
+%% public.leads — entity for funnel submissions
+
+erDiagram
+  LEADS {
+    uuid id PK
+    timestamptz created_at
+    text email
+    text company
+    text role "nullable"
+    text_array ingredients
+    text frequency
+    text quantity_tier
+    int team_size
+    int shots_per_drop
+    int bottles_per_drop
+    int shots_per_month
+    int bottles_per_month
+  }

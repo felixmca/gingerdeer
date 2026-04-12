@@ -1,0 +1,14 @@
+# Legacy static config (optional)
+config.js
+
+# Local secrets / notes (never commit)
+password supabase.txt
+
+# Next.js
+node_modules
+.next
+out
+
+# Env
+.env.local
+.env*.local

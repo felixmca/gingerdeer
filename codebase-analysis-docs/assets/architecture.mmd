@@ -1,0 +1,27 @@
+%% Juice for Teams — high-level request flow (Mermaid)
+%% View in GitHub, VS Code Mermaid extension, or mermaid.live
+
+flowchart LR
+  subgraph Browser["Browser (client)"]
+    LP[LandingPage]
+    FM[FunnelModal]
+    SB_C[createBrowserClient]
+    LP --> FM
+    FM --> SB_C
+  end
+
+  subgraph Edge["Next.js edge"]
+    MW[middleware.ts]
+    SB_M[updateSession]
+    MW --> SB_M
+  end
+
+  subgraph Remote["Supabase"]
+    AUTH[Auth session cookies]
+    DB[(public.leads)]
+  end
+
+  FM -->|insert row| DB
+  SB_C --> DB
+  SB_M --> AUTH
+  MW -.->|all non-static routes| Browser
