@@ -1,14 +1,61 @@
-# Legacy static config (optional)
+# ── Dependencies ───────────────────────────────────────────
+node_modules/
+
+# ── Next.js ────────────────────────────────────────────────
+.next/
+out/
+build/
+
+# ── Vercel ─────────────────────────────────────────────────
+.vercel
+
+# ── Environment & secrets (never commit) ───────────────────
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Keys / certs (common accident vectors)
+*.pem
+*.p12
+*.key
+
+# ── TypeScript / tooling ───────────────────────────────────
+*.tsbuildinfo
+# Keep next-env.d.ts in version control (Next.js references it).
+
+# ── Logs & debug ───────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ── Test / coverage ────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Turborepo / caches ─────────────────────────────────────
+.turbo
+
+# ── OS junk ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Editors (optional local-only) ──────────────────────────
+.idea/
+*.swp
+*.swo
+
+# ── Legacy static site (if present) ────────────────────────
 config.js
 
-# Local secrets / notes (never commit)
+# ── Local notes / passwords ────────────────────────────────
 password supabase.txt
-
-# Next.js
-node_modules
-.next
-out
-
-# Env
-.env.local
-.env*.local
+*password*.txt
+secrets/
