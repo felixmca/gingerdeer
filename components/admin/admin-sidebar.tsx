@@ -106,6 +106,35 @@ export function AdminSidebar() {
           <span>Reports</span>
         </a>
 
+        <a href="/admin/schema" className={cls("/admin/schema")} title="Schema">
+          {/* Table / grid */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="1" y="1.5" width="13" height="12" rx="1.5" />
+            <path d="M1 5.5h13M5 5.5v8" />
+          </svg>
+          <span>Schema</span>
+        </a>
+
+        <a href="/admin/billing" className={cls("/admin/billing")} title="Billing">
+          {/* Credit card */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="1.5" y="3.5" width="12" height="8" rx="1.5" />
+            <path d="M1.5 6.5h12" />
+            <path d="M4 9.5h2" />
+          </svg>
+          <span>Billing</span>
+        </a>
+
+        <a href="/admin/query" className={cls("/admin/query")} title="AI Query">
+          {/* Sparkle / wand */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7.5 1.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z" />
+            <path d="M12 8.5l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5.5-1.3z" />
+            <path d="M2 13l4.5-4.5" />
+          </svg>
+          <span>AI Query</span>
+        </a>
+
         <div className="adm-nav__spacer" />
 
         {/* Back to dashboard */}

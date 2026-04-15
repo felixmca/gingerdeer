@@ -68,6 +68,15 @@ export function DbSidebarNav({ isAdmin = false }: { isAdmin?: boolean }) {
 
         <span className="db-nav__section">Manage</span>
 
+        <a href="/dashboard/checkout" className={cls("/dashboard/checkout")} title="New subscription">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="1.5" y="3.5" width="12" height="9" rx="1.5" />
+            <path d="M5 3.5V2.5a2.5 2.5 0 015 0v1" />
+            <path d="M7.5 7v3M6 8.5h3" />
+          </svg>
+          <span>New subscription</span>
+        </a>
+
         <a href="/dashboard/subscriptions" className={cls("/dashboard/subscriptions")} title="Subscriptions">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
             <rect x="1.5" y="3.5" width="12" height="9" rx="1.5" />

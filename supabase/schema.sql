@@ -385,3 +385,105 @@ begin
       foreign key (campaign_id) references public.email_campaigns(id) on delete set null;
   end if;
 end $$;
+
+/* =========================================================
+   Admin AI Query helper function
+   =========================================================
+   Allows the /admin/query AI interface to execute arbitrary
+   SELECT queries. Called exclusively via the service role
+   from /api/admin/query — never exposed to the browser.
+
+   Run this block once in Supabase SQL Editor to enable the
+   AI Query feature at /admin/query.
+   ========================================================= */
+create or replace function public.admin_exec_query(query_text text)
+returns json
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  result json;
+  trimmed text;
+begin
+  trimmed := lower(trim(query_text));
+  -- Only allow SELECT and WITH (CTEs) queries
+  if trimmed not like 'select%' and trimmed not like 'with%' then
+    raise exception 'Only SELECT queries are allowed';
+  end if;
+  execute 'select json_agg(row_to_json(t)) from (' || query_text || ') t'
+  into result;
+  return coalesce(result, '[]'::json);
+end;
+$$;
+
+/* =========================================================
+   Stripe integration — run this block in Supabase SQL Editor
+   to enable payment processing.
+   =========================================================
+
+   1. Extend subscriptions with Stripe tracking columns
+   2. public.orders — one-off purchase records
+   ========================================================= */
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='subscriptions' and column_name='stripe_subscription_id') then
+    alter table public.subscriptions add column stripe_subscription_id text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='subscriptions' and column_name='stripe_customer_id') then
+    alter table public.subscriptions add column stripe_customer_id text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='subscriptions' and column_name='stripe_checkout_session_id') then
+    alter table public.subscriptions add column stripe_checkout_session_id text;
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='subscriptions' and column_name='current_period_end') then
+    alter table public.subscriptions add column current_period_end timestamptz;
+  end if;
+end $$;
+
+-- ── One-off orders ─────────────────────────────────────────
+create table if not exists public.orders (
+  id                         uuid        primary key default gen_random_uuid(),
+  created_at                 timestamptz not null default now(),
+  user_id                    uuid        not null references auth.users(id) on delete cascade,
+  -- Cart snapshot (array of {slug, name, format, unitLabel, priceExVat, quantity})
+  items                      jsonb       not null default '[]',
+  -- Totals (stored at order time, inc VAT)
+  subtotal_ex_vat            numeric(10,2),
+  vat                        numeric(10,2),
+  total_inc_vat              numeric(10,2),
+  -- Stripe
+  stripe_checkout_session_id text,
+  stripe_payment_intent_id   text,
+  -- Lifecycle
+  status                     text        not null default 'pending'
+                             check (status in ('pending','paid','failed','refunded')),
+  -- Optional delivery info
+  delivery_address_id        uuid        references public.addresses(id) on delete set null,
+  notes                      text
+);
+
+comment on table public.orders is 'One-off juice purchase orders (separate from recurring subscriptions).';
+
+create index if not exists orders_user_id_idx    on public.orders(user_id);
+create index if not exists orders_created_at_idx on public.orders(created_at desc);
+
+alter table public.orders enable row level security;
+
+drop policy if exists "orders_select_owner" on public.orders;
+create policy "orders_select_owner"
+  on public.orders
+  for select
+  to authenticated
+  using (user_id = auth.uid());
+
+grant select on table public.orders to authenticated;
+
+comment on function public.admin_exec_query(text) is
+  'Admin-only helper: executes a read-only SQL query and returns results as JSON. '
+  'Called exclusively from the service role via /api/admin/query.';
