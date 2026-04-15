@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 import { DbSidebarNav } from "@/components/db-sidebar-nav";
+import { BasketIcon } from "@/components/basket-icon";
 import { isAdmin } from "@/lib/admin";
 import type { ReactNode } from "react";
 
@@ -58,6 +59,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <header className="db-topbar">
           <span className="db-topbar__title">juice</span>
           <div className="db-topbar__user">
+            <BasketIcon />
             <span className="db-topbar__avatar" aria-hidden="true">
               {avatarLetter}
             </span>

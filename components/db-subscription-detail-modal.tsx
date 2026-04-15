@@ -76,6 +76,7 @@ export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
   type Action = { label: string; targetStatus: SubStatus; primary: boolean };
 
   const ACTIONS: Record<SubStatus, Action[]> = {
+    checkout_draft: [],
     pending: [
       { label: "Confirm subscription",  targetStatus: "active",    primary: true  },
     ],
@@ -129,30 +130,39 @@ export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
                   <dt>Frequency</dt>
                   <dd>{freqLabel}</dd>
                 </div>
-                <div>
-                  <dt>Team size</dt>
-                  <dd>{sub.team_size} {sub.team_size === 1 ? "person" : "people"}</dd>
-                </div>
-                <div>
-                  <dt>Quantity</dt>
-                  <dd>{multLabel} per person per drop</dd>
-                </div>
-                {sub.shots_per_drop > 0 && (
+                {sub.quantity_per_delivery != null ? (
                   <div>
-                    <dt>Shots per drop</dt>
-                    <dd>{sub.shots_per_drop} × 100ml</dd>
+                    <dt>Per delivery</dt>
+                    <dd>{sub.quantity_per_delivery} {sub.format === "shot" ? "shots" : sub.format === "share" ? "bottles" : "units"}</dd>
                   </div>
+                ) : (
+                  <>
+                    <div>
+                      <dt>Team size</dt>
+                      <dd>{sub.team_size} {sub.team_size === 1 ? "person" : "people"}</dd>
+                    </div>
+                    <div>
+                      <dt>Quantity</dt>
+                      <dd>{multLabel} per person</dd>
+                    </div>
+                    {sub.shots_per_drop > 0 && (
+                      <div>
+                        <dt>Shots per delivery</dt>
+                        <dd>{sub.shots_per_drop} × 100ml</dd>
+                      </div>
+                    )}
+                    {sub.bottles_per_drop > 0 && (
+                      <div>
+                        <dt>Bottles per delivery</dt>
+                        <dd>{sub.bottles_per_drop} × 1L share</dd>
+                      </div>
+                    )}
+                  </>
                 )}
-                {sub.bottles_per_drop > 0 && (
+                {sub.preferred_day && (
                   <div>
-                    <dt>Bottles per drop</dt>
-                    <dd>{sub.bottles_per_drop} × 1L share</dd>
-                  </div>
-                )}
-                {sub.shots_per_month > 0 && (
-                  <div>
-                    <dt>Shots / month</dt>
-                    <dd>{sub.shots_per_month}</dd>
+                    <dt>Preferred day</dt>
+                    <dd>{sub.preferred_day}</dd>
                   </div>
                 )}
               </dl>
@@ -165,7 +175,7 @@ export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
                 <dl className="sub-detail__dl">
                   {sub.price_per_drop_ex_vat != null && (
                     <div>
-                      <dt>Per drop (ex. VAT)</dt>
+                      <dt>Per delivery (ex. VAT)</dt>
                       <dd>{fmtGBP(sub.price_per_drop_ex_vat)}</dd>
                     </div>
                   )}

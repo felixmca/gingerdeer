@@ -10,7 +10,7 @@ import {
 } from "@/lib/subscription-meta";
 import { useEffect, useState } from "react";
 import { DbSubscriptionDetailModal } from "./db-subscription-detail-modal";
-import { DbSubscriptionModal } from "./db-subscription-modal";
+import { OrderLauncher } from "./order-launcher";
 
 // ── Filter helpers ────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ type StatusKey = SubStatus;
 
 const STATUS_KEYS = Object.keys(STATUS_LABELS) as StatusKey[];
 
-const DRINK_NAMES = ["All-in-one", "Lemon, Ginger, Honey", "Apple Ginger", "Turmeric Boost"];
+const DRINK_NAMES = ["Classic Ginger", "Green Citrus", "Berry Beet", "Golden Carrot"];
 const DAY_KEYS    = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 function allTrue(keys: string[]) {
@@ -38,7 +38,7 @@ function CheckIcon() {
 export function DbSubscriptionPage() {
   const [search,       setSearch]       = useState("");
   const [statuses,     setStatuses]     = useState<Record<StatusKey, boolean>>({
-    pending: true, active: true, paused: true, cancelled: false,
+    checkout_draft: false, pending: true, active: true, paused: true, cancelled: false,
   });
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [newModalOpen, setNewModalOpen] = useState(false);
@@ -75,14 +75,19 @@ export function DbSubscriptionPage() {
 
   function clearFilters() {
     setSearch("");
-    setStatuses({ pending: true, active: true, paused: true, cancelled: false });
+    setStatuses({ checkout_draft: false, pending: true, active: true, paused: true, cancelled: false });
     setDrinkFilters(allTrue(DRINK_NAMES));
     setDayFilters(allTrue(DAY_KEYS));
   }
 
-  // Prepend newly created subscription so it appears at the top
-  function handleNewSub(sub: SubRow) {
-    setSubRows((rows) => [sub, ...rows]);
+  // Reload subscriptions when launcher closes (a new one may have been started)
+  function handleLauncherClose() {
+    setNewModalOpen(false);
+    // Re-fetch to pick up any newly created subscriptions
+    fetch("/api/subscription")
+      .then((r) => r.json())
+      .then((d: { subscriptions?: SubRow[] }) => setSubRows(d.subscriptions ?? []))
+      .catch(() => {});
   }
 
   // Called when the detail modal updates a sub's status/fields
@@ -267,10 +272,15 @@ export function DbSubscriptionPage() {
                         )}
                       </div>
                       <p className="db-sub-card__qty">
-                        {sub.shots_per_drop > 0  && `${sub.shots_per_drop} × 100ml shots`}
-                        {sub.shots_per_drop > 0 && sub.bottles_per_drop > 0 && " · "}
-                        {sub.bottles_per_drop > 0 && `${sub.bottles_per_drop} × 1L bottles`}
-                        {!isNaN(mult) && ` (${mult}× / person)`}
+                        {sub.quantity_per_delivery != null
+                          ? `${sub.quantity_per_delivery} ${sub.format === "shot" ? "shots" : sub.format === "share" ? "bottles" : "units"} / delivery`
+                          : <>
+                              {sub.shots_per_drop > 0 && `${sub.shots_per_drop} × 100ml shots`}
+                              {sub.shots_per_drop > 0 && sub.bottles_per_drop > 0 && " · "}
+                              {sub.bottles_per_drop > 0 && `${sub.bottles_per_drop} × 1L bottles`}
+                              {!isNaN(mult) && ` (${mult}× / person)`}
+                            </>
+                        }
                       </p>
                       {sub.total_per_month_inc_vat != null && (
                         <p className="db-sub-card__price" style={{ color: pm.accent }}>
@@ -293,11 +303,12 @@ export function DbSubscriptionPage() {
         onUpdate={handleSubUpdate}
       />
 
-      {/* ── New subscription modal ── */}
-      <DbSubscriptionModal
+      {/* ── New subscription launcher ── */}
+      <OrderLauncher
         open={newModalOpen}
-        onClose={() => setNewModalOpen(false)}
-        onComplete={handleNewSub}
+        onClose={handleLauncherClose}
+        preselectedType="subscription"
+        loggedIn={true}
       />
     </>
   );

@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { DbOneOffModal, type OneOffOrder } from "./db-one-off-modal";
+import { useEffect, useState } from "react";
+import { OrderLauncher } from "./order-launcher";
+import { PRODUCTS } from "@/lib/products";
 
-const DRINKS = [
-  { key: "allinone",           name: "All-in-one",           accent: "#c2410c", bg: "#fff7ed" },
-  { key: "lemon_ginger_honey", name: "Lemon, Ginger, Honey", accent: "#ca8a04", bg: "#fefce8" },
-  { key: "apple_ginger",       name: "Apple Ginger",         accent: "#3f6212", bg: "#f7fee7" },
-  { key: "turmeric",           name: "Turmeric Boost",       accent: "#d97706", bg: "#fffbeb" },
-] as const;
+interface OrderRow {
+  id: string;
+  product_slug: string | null;
+  format: "shot" | "share" | null;
+  quantity: number | null;
+  delivery_date: string | null;
+  status: string;
+  total_inc_vat: number | null;
+  created_at: string;
+}
 
 const FORMAT_LABELS: Record<string, string> = {
   shot:  "100ml shots",
@@ -16,10 +21,11 @@ const FORMAT_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending:   "Pending",
-  confirmed: "Confirmed",
-  fulfilled: "Fulfilled",
-  cancelled: "Cancelled",
+  checkout_draft: "Draft",
+  pending:        "Pending",
+  paid:           "Paid",
+  fulfilled:      "Fulfilled",
+  cancelled:      "Cancelled",
 };
 
 function formatDate(iso: string) {
@@ -30,33 +36,56 @@ function formatDate(iso: string) {
 function formatDateParts(iso: string) {
   const d = new Date(iso + "T12:00:00");
   return {
-    day: d.toLocaleDateString("en-GB", { day: "numeric" }),
+    day:   d.toLocaleDateString("en-GB", { day: "numeric" }),
     month: d.toLocaleDateString("en-GB", { month: "short" }),
   };
 }
 
+function productMeta(slug: string | null) {
+  if (!slug) return null;
+  // Slug is like "classic_ginger" — match against PRODUCTS
+  return PRODUCTS.find((p) => p.slug === slug) ?? null;
+}
+
 export function DbOneOffPage() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [orders, setOrders] = useState<OneOffOrder[]>([]);
-  const [search, setSearch] = useState("");
+  const [orders, setOrders]       = useState<OrderRow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState("");
 
-  function handleComplete(order: OneOffOrder) {
-    setOrders((prev) => [order, ...prev]);
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/orders");
+        if (res.ok) {
+          const json = await res.json() as { orders?: OrderRow[] };
+          setOrders(json.orders ?? []);
+        }
+      } catch { /* silently show empty state */ }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  function handleLauncherClose() {
     setModalOpen(false);
+    // Re-fetch to show any newly placed orders
+    fetch("/api/orders")
+      .then((r) => r.json())
+      .then((d: { orders?: OrderRow[] }) => setOrders(d.orders ?? []))
+      .catch(() => {});
   }
-
-  const drinkMeta = (key: string) => DRINKS.find((d) => d.key === key);
 
   const visible = orders.filter((o) => {
     if (!search) return true;
-    const dm = drinkMeta(o.drink);
+    const pm = productMeta(o.product_slug);
     const needle = search.toLowerCase();
     return (
-      (dm?.name.toLowerCase().includes(needle)) ||
-      FORMAT_LABELS[o.format]?.toLowerCase().includes(needle) ||
+      pm?.name.toLowerCase().includes(needle) ||
+      (o.format && FORMAT_LABELS[o.format]?.toLowerCase().includes(needle)) ||
       STATUS_LABELS[o.status]?.toLowerCase().includes(needle) ||
-      o.address.toLowerCase().includes(needle) ||
-      o.deliveryDate.includes(needle)
+      o.delivery_date?.includes(needle)
     );
   });
 
@@ -67,7 +96,7 @@ export function DbOneOffPage() {
         {/* ── Toolbar ── */}
         <div className="db-oneoff__toolbar">
           <div className="db-oneoff__count">
-            <span className="db-oneoff__count-num">{orders.length}</span>
+            <span className="db-oneoff__count-num">{loading ? "—" : orders.length}</span>
             <span className="db-oneoff__count-label">
               one-off order{orders.length !== 1 ? "s" : ""}
             </span>
@@ -101,27 +130,27 @@ export function DbOneOffPage() {
 
         {/* ── Product strip ── */}
         <div className="db-oneoff__strip" aria-label="Available drinks">
-          {DRINKS.map((d) => (
+          {PRODUCTS.map((p) => (
             <button
-              key={d.key}
+              key={p.slug}
               type="button"
               className="db-oneoff__strip-card"
-              style={{ background: d.bg, borderColor: `color-mix(in srgb, ${d.accent} 20%, transparent)` }}
+              style={{ background: p.bg, borderColor: `color-mix(in srgb, ${p.accent} 20%, transparent)` }}
               onClick={() => setModalOpen(true)}
-              aria-label={`Order ${d.name}`}
+              aria-label={`Order ${p.name}`}
             >
               <div
                 className="db-oneoff__strip-bottle"
                 style={{
-                  background: `linear-gradient(180deg, color-mix(in srgb, ${d.accent} 35%, #fff) 0%, ${d.accent} 55%, color-mix(in srgb, ${d.accent} 60%, #000) 100%)`,
-                  boxShadow: `0 4px 12px color-mix(in srgb, ${d.accent} 25%, transparent)`,
+                  background: `linear-gradient(180deg, color-mix(in srgb, ${p.accent} 35%, #fff) 0%, ${p.accent} 55%, color-mix(in srgb, ${p.accent} 60%, #000) 100%)`,
+                  boxShadow: `0 4px 12px color-mix(in srgb, ${p.accent} 25%, transparent)`,
                 }}
               />
               <div className="db-oneoff__strip-info">
-                <p className="db-oneoff__strip-name" style={{ color: d.accent }}>{d.name}</p>
+                <p className="db-oneoff__strip-name" style={{ color: p.accent }}>{p.name}</p>
                 <p className="db-oneoff__strip-prices">£3.50 shot · £25.00 1L</p>
               </div>
-              <span className="db-oneoff__strip-order" style={{ color: d.accent }}>Order →</span>
+              <span className="db-oneoff__strip-order" style={{ color: p.accent }}>Order →</span>
             </button>
           ))}
         </div>
@@ -129,7 +158,11 @@ export function DbOneOffPage() {
         <hr className="db-orders__divider" />
 
         {/* ── Order list ── */}
-        {visible.length === 0 ? (
+        {loading ? (
+          <div className="db-orders__empty">
+            <p className="db-orders__empty-sub">Loading orders…</p>
+          </div>
+        ) : visible.length === 0 ? (
           <div className="db-orders__empty">
             <svg className="db-orders__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="6" y="8" width="36" height="36" rx="3" />
@@ -161,41 +194,37 @@ export function DbOneOffPage() {
         ) : (
           <div className="db-oneoff__list">
             {visible.map((order) => {
-              const dm = drinkMeta(order.drink);
-              const { day, month } = formatDateParts(order.deliveryDate);
-              const price = order.format === "shot" ? 3.50 : 25.00;
-              const total = price * order.qty;
+              const pm = productMeta(order.product_slug);
+              const dateStr = order.delivery_date ?? order.created_at;
+              const { day, month } = formatDateParts(dateStr.split("T")[0]);
               return (
                 <div
                   key={order.id}
                   className="db-oneoff__card"
-                  style={{ borderLeftColor: dm?.accent ?? "var(--color-accent)" }}
+                  style={{ borderLeftColor: pm?.accent ?? "var(--color-accent)" }}
                 >
                   {/* Date badge */}
-                  <div className="db-oneoff__date" style={{ background: dm?.bg, color: dm?.accent }}>
+                  <div className="db-oneoff__date" style={{ background: pm?.bg, color: pm?.accent }}>
                     <span className="db-oneoff__date-day">{day}</span>
                     <span className="db-oneoff__date-month">{month}</span>
                   </div>
 
                   {/* Info */}
                   <div className="db-oneoff__card-info">
-                    <p className="db-oneoff__card-name" style={{ color: dm?.accent }}>{dm?.name}</p>
+                    <p className="db-oneoff__card-name" style={{ color: pm?.accent }}>{pm?.name ?? order.product_slug}</p>
                     <p className="db-oneoff__card-meta">
-                      {order.qty} × {FORMAT_LABELS[order.format]} · {formatDate(order.deliveryDate)}
+                      {order.quantity} × {order.format ? FORMAT_LABELS[order.format] : "units"}
+                      {order.delivery_date && ` · ${formatDate(order.delivery_date)}`}
                     </p>
-                    {order.address && (
-                      <p className="db-oneoff__card-address">{order.address}</p>
-                    )}
                   </div>
 
                   {/* Price + status */}
                   <div className="db-oneoff__card-right">
-                    <p className="db-oneoff__card-price">£{total.toFixed(2)}</p>
-                    <span
-                      className="db-oneoff__card-status"
-                      data-status={order.status}
-                    >
-                      {STATUS_LABELS[order.status]}
+                    {order.total_inc_vat != null && (
+                      <p className="db-oneoff__card-price">£{order.total_inc_vat.toFixed(2)}</p>
+                    )}
+                    <span className="db-oneoff__card-status" data-status={order.status}>
+                      {STATUS_LABELS[order.status] ?? order.status}
                     </span>
                   </div>
                 </div>
@@ -205,10 +234,11 @@ export function DbOneOffPage() {
         )}
       </div>
 
-      <DbOneOffModal
+      <OrderLauncher
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onComplete={handleComplete}
+        onClose={handleLauncherClose}
+        preselectedType="one_off"
+        loggedIn={true}
       />
     </>
   );

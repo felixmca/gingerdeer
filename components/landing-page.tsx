@@ -1,57 +1,53 @@
 "use client";
 
-import { FunnelModal, type FunnelPrefill } from "@/components/funnel-modal";
+import { OrderLauncher } from "@/components/order-launcher";
 import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 
 const PRODUCTS = [
   {
-    id: "allinone",
-    name: "All-in-one",
+    id: "classic_ginger",
+    name: "Classic Ginger",
+    tagline: "Invigorate",
     accent: "#c2410c",
     bg: "#fff7ed",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-    desc: "Ginger, lemon, turmeric and apple. Everything your team needs, no decisions required.",
-    ingredientKey: "allinone_shot",
+    desc: "A sharp ginger kick with citrus lift and warming spice.",
+    ingredientsList: ["Ginger", "lemon", "cayenne", "black pepper", "turmeric"],
   },
   {
-    id: "lemon_ginger_honey",
-    name: "Lemon, Ginger, Honey",
-    accent: "#ca8a04",
-    bg: "#fefce8",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-    desc: "Bright cold-pressed lemon with fresh ginger and raw honey. A crowd-pleaser for any team.",
-    ingredientKey: "lemon_ginger_honey_shot",
-  },
-  {
-    id: "apple_ginger",
-    name: "Apple Ginger",
+    id: "green_citrus",
+    name: "Green Citrus",
+    tagline: "Revitalise",
     accent: "#3f6212",
     bg: "#f7fee7",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-    desc: "Cold-pressed apple with a sharp ginger kick. Naturally sweet, crisp, and refreshing.",
-    ingredientKey: "apple_ginger_shot",
+    desc: "Clean, crisp, and refreshing — cooling greens with apple and mint.",
+    ingredientsList: ["Apple", "cucumber", "spinach", "lemon", "mint", "ginger"],
   },
   {
-    id: "turmeric",
-    name: "Turmeric Boost",
+    id: "berry_beet",
+    name: "Berry Beet",
+    tagline: "Restore",
+    accent: "#9f1239",
+    bg: "#fff1f2",
+    desc: "Rich berries meet earthy beetroot in a smooth, restorative blend.",
+    ingredientsList: ["Beetroot", "strawberry", "raspberry", "apple", "lemon", "ginger"],
+  },
+  {
+    id: "golden_carrot",
+    name: "Golden Carrot",
+    tagline: "Glow",
     accent: "#d97706",
     bg: "#fffbeb",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-    desc: "Turmeric, ginger, black pepper and honey. Anti-inflammatory in every sip.",
-    ingredientKey: "turmeric_shot",
+    desc: "Sweet carrot and orange balanced with turmeric, lemon, and ginger.",
+    ingredientsList: ["Carrot", "orange", "turmeric", "lemon", "ginger", "black pepper"],
   },
 ] as const;
 
 const TICKER_ITEMS = [
-  "All-in-one",
-  "Lemon, Ginger, Honey",
-  "Apple Ginger",
-  "Turmeric Boost",
+  "Classic Ginger",
+  "Green Citrus",
+  "Berry Beet",
+  "Golden Carrot",
   "100ml shots",
   "1L share bottles",
   "Weekly delivery",
@@ -59,10 +55,11 @@ const TICKER_ITEMS = [
 ];
 
 export function LandingPage() {
-  const [funnelOpen, setFunnelOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [prefill, setPrefill] = useState<FunnelPrefill | undefined>(undefined);
-  const [selectedIngredient, setSelectedIngredient] = useState<string | undefined>(undefined);
+  const [launcherOpen, setLauncherOpen]       = useState(false);
+  const [loggedIn, setLoggedIn]               = useState(false);
+  const [userEmail, setUserEmail]             = useState("");
+  const [userCompany, setUserCompany]         = useState("");
+  const [preselectedSlug, setPreselectedSlug] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const supabase = createClient();
@@ -72,33 +69,29 @@ export function LandingPage() {
       setLoggedIn(!!session);
       if (!session?.user) return;
       const user = session.user;
+      setUserEmail(user.email ?? "");
       const { data: lead } = await supabase
         .from("leads")
-        .select("id, email, company, role")
+        .select("company")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      setPrefill({
-        email: lead?.email ?? user.email ?? "",
-        company: lead?.company ?? "",
-        role: lead?.role ?? "",
-        leadId: lead?.id,
-      });
+      if (lead?.company) setUserCompany(lead.company);
     }
 
     loadUser();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
       setLoggedIn(!!session);
-      if (!session) setPrefill(undefined);
+      if (!session) { setUserEmail(""); setUserCompany(""); }
     });
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  function openFunnel(ingredientKey?: string) {
-    setSelectedIngredient(ingredientKey);
-    setFunnelOpen(true);
+  function openLauncher(productSlug?: string) {
+    setPreselectedSlug(productSlug);
+    setLauncherOpen(true);
   }
 
   return (
@@ -126,7 +119,7 @@ export function LandingPage() {
             ) : (
               <a href="/auth/login" className="btn btn--ghost btn--sm">Login</a>
             )}
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => openFunnel()}>
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => openLauncher()}>
               Get started
             </button>
           </div>
@@ -151,7 +144,7 @@ export function LandingPage() {
                 Offer a tangible perk employees actually use. Cold-pressed ginger shots and juices, delivered on the schedule your team chooses — not just for birthdays.
               </p>
               <div className="lp-hero__actions">
-                <button type="button" className="btn btn--primary btn--lg" onClick={() => openFunnel()}>
+                <button type="button" className="btn btn--primary btn--lg" onClick={() => openLauncher()}>
                   Start for your team
                 </button>
                 <a href="#how-it-works" className="btn btn--ghost btn--lg">
@@ -181,7 +174,7 @@ export function LandingPage() {
                     }}
                   />
                   <p className="lp-hero__tile-name">{p.name}</p>
-                  <p className="lp-hero__tile-formats">{p.shotPrice} shot · {p.sharePrice} 1L</p>
+                  <p className="lp-hero__tile-formats">£3.50 shot · £25.00 1L</p>
                 </div>
               ))}
             </div>
@@ -246,7 +239,7 @@ export function LandingPage() {
                   key={p.id}
                   className="lp-bento__card"
                   style={{ background: p.bg, borderColor: `color-mix(in srgb, ${p.accent} 20%, transparent)` }}
-                  onClick={() => openFunnel(p.ingredientKey)}
+                  onClick={() => openLauncher(p.id)}
                 >
                   <div
                     className="lp-bento__bottle"
@@ -257,14 +250,15 @@ export function LandingPage() {
                   />
                   <div className="lp-bento__info">
                     <p className="lp-bento__name">{p.name}</p>
-                    <p className="lp-bento__price">{p.shotPrice} shot · {p.sharePrice} 1L share</p>
+                    <p className="lp-bento__price" style={{ color: p.accent, fontSize: "0.75rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>{p.tagline}</p>
+                    <p className="lp-bento__price">{p.desc}</p>
                     <button
                       type="button"
                       className="lp-bento__btn"
                       style={{ color: p.accent }}
-                      onClick={(e) => { e.stopPropagation(); openFunnel(p.ingredientKey); }}
+                      onClick={(e) => { e.stopPropagation(); openLauncher(p.id); }}
                     >
-                      Add to subscription →
+                      Order now →
                     </button>
                   </div>
                 </div>
@@ -282,7 +276,7 @@ export function LandingPage() {
               <p>
                 Many companies already subscribe employees to recurring treats. Juice fits the same flow: sign up, configure, and the deliveries take care of themselves.
               </p>
-              <button type="button" className="btn btn--primary" onClick={() => openFunnel()}>
+              <button type="button" className="btn btn--primary" onClick={() => openLauncher()}>
                 Walk through the flow
               </button>
             </div>
@@ -352,7 +346,7 @@ export function LandingPage() {
                 <footer className="lp-hr__source">— Built for People &amp; HR leaders</footer>
               </blockquote>
             </div>
-            <button type="button" className="btn btn--primary btn--lg" onClick={() => openFunnel()}>
+            <button type="button" className="btn btn--primary btn--lg" onClick={() => openLauncher()}>
               Request access
             </button>
           </div>
@@ -368,12 +362,13 @@ export function LandingPage() {
         </div>
       </footer>
 
-      <FunnelModal
-        open={funnelOpen}
-        onClose={() => setFunnelOpen(false)}
-        prefill={prefill}
-        preselectedIngredient={selectedIngredient}
+      <OrderLauncher
+        open={launcherOpen}
+        onClose={() => setLauncherOpen(false)}
+        preselectedProductSlug={preselectedSlug}
         loggedIn={loggedIn}
+        userEmail={userEmail}
+        userCompany={userCompany}
       />
     </>
   );

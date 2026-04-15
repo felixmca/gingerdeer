@@ -3,38 +3,10 @@ import type { CSSProperties } from "react";
 export const metadata = { title: "Home — Juice for Teams" };
 
 const PRODUCTS = [
-  {
-    id: "allinone",
-    name: "All-in-one",
-    accent: "#c2410c",
-    bg: "#fff7ed",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-  },
-  {
-    id: "lemon_ginger_honey",
-    name: "Lemon, Ginger, Honey",
-    accent: "#ca8a04",
-    bg: "#fefce8",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-  },
-  {
-    id: "apple_ginger",
-    name: "Apple Ginger",
-    accent: "#3f6212",
-    bg: "#f7fee7",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-  },
-  {
-    id: "turmeric",
-    name: "Turmeric Boost",
-    accent: "#d97706",
-    bg: "#fffbeb",
-    shotPrice: "£3.50",
-    sharePrice: "£25.00",
-  },
+  { id: "classic_ginger",  name: "Classic Ginger",  accent: "#c2410c", bg: "#fff7ed" },
+  { id: "green_citrus",    name: "Green Citrus",     accent: "#3f6212", bg: "#f7fee7" },
+  { id: "berry_beet",      name: "Berry Beet",       accent: "#9f1239", bg: "#fff1f2" },
+  { id: "golden_carrot",   name: "Golden Carrot",    accent: "#d97706", bg: "#fffbeb" },
 ];
 
 const QUICK_LINKS = [
@@ -107,7 +79,7 @@ export default function DashboardPage() {
               <div>
                 <p className="db-home-v2__tile-name">{p.name}</p>
                 <p className="db-home-v2__tile-price">
-                  {p.shotPrice} shot · {p.sharePrice} 1L
+                  £3.50 shot · £25.00 1L
                 </p>
               </div>
             </a>

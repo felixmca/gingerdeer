@@ -6,6 +6,16 @@ export const INGREDIENT_META: Record<
   string,
   { label: string; shots: number; bottles: number }
 > = {
+  // Current products
+  classic_ginger_shot:   { label: "Classic Ginger (100ml shot)",     shots: 1, bottles: 0   },
+  classic_ginger_share:  { label: "Classic Ginger (1L share)",       shots: 0, bottles: 0.1 },
+  green_citrus_shot:     { label: "Green Citrus (100ml shot)",       shots: 1, bottles: 0   },
+  green_citrus_share:    { label: "Green Citrus (1L share)",         shots: 0, bottles: 0.1 },
+  berry_beet_shot:       { label: "Berry Beet (100ml shot)",         shots: 1, bottles: 0   },
+  berry_beet_share:      { label: "Berry Beet (1L share)",           shots: 0, bottles: 0.1 },
+  golden_carrot_shot:    { label: "Golden Carrot (100ml shot)",      shots: 1, bottles: 0   },
+  golden_carrot_share:   { label: "Golden Carrot (1L share)",        shots: 0, bottles: 0.1 },
+  // Legacy products (kept for backward-compatible display of old subscription records)
   allinone_shot:             { label: "All-in-one (100ml shot)",           shots: 1,   bottles: 0   },
   allinone_share:            { label: "All-in-one (1L share bottle)",      shots: 0,   bottles: 0.1 },
   lemon_ginger_honey_shot:   { label: "Lemon, Ginger, Honey (100ml shot)", shots: 1,   bottles: 0   },

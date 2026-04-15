@@ -27,6 +27,7 @@ export async function GET() {
     .from("subscriptions")
     .select("*")
     .eq("user_id", user.id)
+    .neq("status", "checkout_draft")
     .order("created_at", { ascending: false });
 
   if (error) {

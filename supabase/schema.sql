@@ -447,25 +447,34 @@ begin
 end $$;
 
 -- ── One-off orders ─────────────────────────────────────────
+-- NOTE: if adding new columns, also update scripts/migrate-order-flow.sql
 create table if not exists public.orders (
-  id                         uuid        primary key default gen_random_uuid(),
-  created_at                 timestamptz not null default now(),
-  user_id                    uuid        not null references auth.users(id) on delete cascade,
-  -- Cart snapshot (array of {slug, name, format, unitLabel, priceExVat, quantity})
-  items                      jsonb       not null default '[]',
+  id                         uuid          primary key default gen_random_uuid(),
+  created_at                 timestamptz   not null default now(),
+  user_id                    uuid          not null references auth.users(id) on delete cascade,
+  -- Product (primary / legacy single-product fields)
+  product_id                 uuid          references public.products(id) on delete set null,
+  product_slug               text,
+  format                     text          check (format in ('shot', 'share')),
+  quantity                   int,
+  -- Multi-product line items
+  line_items                 jsonb,
+  -- Cart snapshot (legacy: array of {slug, name, format, unitLabel, priceExVat, quantity})
+  items                      jsonb         not null default '[]',
   -- Totals (stored at order time, inc VAT)
-  subtotal_ex_vat            numeric(10,2),
-  vat                        numeric(10,2),
-  total_inc_vat              numeric(10,2),
+  subtotal_ex_vat            numeric(10,2) not null default 0,
+  vat                        numeric(10,2) not null default 0,
+  total_inc_vat              numeric(10,2) not null default 0,
+  -- Delivery
+  delivery_date              date,
+  delivery_notes             text,
+  delivery_address_id        uuid          references public.addresses(id) on delete set null,
   -- Stripe
   stripe_checkout_session_id text,
   stripe_payment_intent_id   text,
   -- Lifecycle
-  status                     text        not null default 'pending'
-                             check (status in ('pending','paid','failed','refunded')),
-  -- Optional delivery info
-  delivery_address_id        uuid        references public.addresses(id) on delete set null,
-  notes                      text
+  status                     text          not null default 'checkout_draft'
+                             check (status in ('checkout_draft','pending','paid','fulfilled','cancelled'))
 );
 
 comment on table public.orders is 'One-off juice purchase orders (separate from recurring subscriptions).';

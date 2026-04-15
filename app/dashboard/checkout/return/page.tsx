@@ -24,12 +24,14 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
   let status      = "unknown";
   let amountTotal = 0;
   let customerEmail: string | null = null;
+  let isOneOff    = false;
 
   try {
     const session = await stripe.checkout.sessions.retrieve(session_id);
     status        = session.status ?? "unknown";
     amountTotal   = session.amount_total ?? 0;
     customerEmail = session.customer_details?.email ?? user.email ?? null;
+    isOneOff      = session.mode === "payment";
   } catch {
     // session not found or Stripe error — show generic error
     status = "error";
@@ -49,17 +51,28 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
             </div>
             <h1 className="co-return__heading">You&apos;re all set!</h1>
             <p className="co-return__body">
-              Your subscription is confirmed
-              {amountTotal > 0 && <> — first payment of <strong>{fmtGBP(amountTotal)}</strong></>}.
+              {isOneOff
+                ? <>Your order is confirmed{amountTotal > 0 && <> — payment of <strong>{fmtGBP(amountTotal)}</strong></>}.</>
+                : <>Your subscription is confirmed{amountTotal > 0 && <> — first payment of <strong>{fmtGBP(amountTotal)}</strong></>}.</>
+              }
               {customerEmail && <> A receipt has been sent to <strong>{customerEmail}</strong>.</>}
             </p>
             <p className="co-return__body">
-              Your first delivery will be arranged shortly. You&apos;ll receive a confirmation email with the details.
+              {isOneOff
+                ? "Your delivery will be arranged for the requested date. You'll receive a confirmation shortly."
+                : "Your first delivery will be arranged shortly. You'll receive a confirmation email with the details."
+              }
             </p>
             <div className="co-return__actions">
-              <Link href="/dashboard/subscriptions" className="adm-btn adm-btn--primary">
-                View subscription
-              </Link>
+              {isOneOff ? (
+                <Link href="/dashboard/orders" className="adm-btn adm-btn--primary">
+                  View orders
+                </Link>
+              ) : (
+                <Link href="/dashboard/subscriptions" className="adm-btn adm-btn--primary">
+                  View subscription
+                </Link>
+              )}
               <Link href="/dashboard" className="adm-btn adm-btn--ghost">
                 Go to dashboard
               </Link>

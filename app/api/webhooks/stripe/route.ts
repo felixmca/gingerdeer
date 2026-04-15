@@ -36,36 +36,40 @@ export async function POST(req: NextRequest) {
 
   try {
     switch (event.type) {
-      // ── Checkout completed → subscription created in Stripe ────────────────
+      // ── Checkout completed → subscription or one-off payment ─────────────
       case "checkout.session.completed": {
         const sess = event.data.object as Stripe.Checkout.Session;
-        if (sess.mode !== "subscription") break;
 
-        const dbSubId = sess.metadata?.supabase_subscription_id;
-        if (!dbSubId) {
-          console.warn("[stripe webhook] checkout.session.completed missing supabase_subscription_id");
-          break;
+        if (sess.mode === "subscription") {
+          const dbSubId = sess.metadata?.supabase_subscription_id;
+          if (!dbSubId) {
+            console.warn("[stripe webhook] checkout.session.completed missing supabase_subscription_id");
+            break;
+          }
+
+          // Retrieve the subscription Stripe just created so we have the period end
+          const stripeSub = await stripe.subscriptions.retrieve(sess.subscription as string);
+          const periodEnd = stripeSub.items.data[0]?.current_period_end;
+
+          await service
+            .from("subscriptions")
+            .update({
+              status:                  "active",
+              stripe_subscription_id:  stripeSub.id,
+              ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
+            })
+            .eq("id", dbSubId);
+
+        } else if (sess.mode === "payment") {
+          // One-off order — find by session ID and mark paid
+          const dbOrderId = sess.metadata?.supabase_order_id;
+          if (dbOrderId) {
+            await service
+              .from("orders")
+              .update({ status: "paid", stripe_checkout_session_id: sess.id })
+              .eq("id", dbOrderId);
+          }
         }
-
-        // Retrieve the subscription Stripe just created so we have the period end
-        const stripeSub = await stripe.subscriptions.retrieve(sess.subscription as string);
-
-        const periodEnd = stripeSub.items.data[0]?.current_period_end;
-        await service
-          .from("subscriptions")
-          .update({
-            status:                  "active",
-            stripe_subscription_id:  stripeSub.id,
-            ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
-          })
-          .eq("id", dbSubId);
-
-        // Mark any pending orders for this user as paid (they were on the first invoice)
-        await service
-          .from("orders")
-          .update({ status: "paid", stripe_checkout_session_id: sess.id })
-          .eq("user_id", sess.metadata?.supabase_user_id ?? "")
-          .eq("status", "pending");
 
         break;
       }

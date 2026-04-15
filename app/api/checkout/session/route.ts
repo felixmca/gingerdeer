@@ -2,163 +2,382 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe, toPence } from "@/lib/stripe";
-import { computePlan, FREQ_LABEL } from "@/lib/funnel-logic";
+import { computeSubscriptionPrice, computeOneOffPrice, FORMAT_META } from "@/lib/products";
+import { FREQ_LABEL } from "@/lib/funnel-logic";
+import type { Format } from "@/lib/products";
 import type { Frequency } from "@/lib/funnel-logic";
 
-interface CartItem {
-  slug: string;
-  name: string;
-  format: string;
-  unitLabel: string;
-  priceExVat: number;
+interface LineItem {
+  productSlug: string;
+  format: Format;
   quantity: number;
 }
 
-interface SubConfig {
-  ingredients: string[];
-  frequency: Frequency;
-  teamSize: number;
-  multiplier: number;
+interface NewAddress {
+  line1: string;
+  line2?: string;
+  city: string;
+  postcode: string;
+  label?: string;
+  saveToAccount?: boolean;
+}
+
+function sumSubPrice(lineItems: LineItem[], frequency: Frequency) {
+  let pricePerDeliveryExVat = 0;
+  let pricePerMonthExVat = 0;
+  let vatPerMonth = 0;
+  let totalPerMonthIncVat = 0;
+  for (const item of lineItems) {
+    const p = computeSubscriptionPrice(item.format, item.quantity, frequency);
+    pricePerDeliveryExVat += p.pricePerDeliveryExVat;
+    pricePerMonthExVat += p.pricePerMonthExVat;
+    vatPerMonth += p.vatPerMonth;
+    totalPerMonthIncVat += p.totalPerMonthIncVat;
+  }
+  return {
+    pricePerDeliveryExVat: parseFloat(pricePerDeliveryExVat.toFixed(2)),
+    pricePerMonthExVat: parseFloat(pricePerMonthExVat.toFixed(2)),
+    vatPerMonth: parseFloat(vatPerMonth.toFixed(2)),
+    totalPerMonthIncVat: parseFloat(totalPerMonthIncVat.toFixed(2)),
+  };
+}
+
+function sumOneOffPrice(lineItems: LineItem[]) {
+  let subtotalExVat = 0, vat = 0, totalIncVat = 0;
+  for (const item of lineItems) {
+    const p = computeOneOffPrice(item.format, item.quantity);
+    subtotalExVat += p.subtotalExVat;
+    vat += p.vat;
+    totalIncVat += p.totalIncVat;
+  }
+  return {
+    subtotalExVat: parseFloat(subtotalExVat.toFixed(2)),
+    vat: parseFloat(vat.toFixed(2)),
+    totalIncVat: parseFloat(totalIncVat.toFixed(2)),
+  };
 }
 
 /**
  * POST /api/checkout/session
- * Creates a Stripe Checkout session (embedded mode) for a subscription + optional one-off items.
- * Returns { clientSecret } for the EmbeddedCheckout component.
+ *
+ * Unified endpoint for subscription and one-off checkout, plus save-as-draft.
+ *
+ * Body shape:
+ *   mode: "subscription" | "one_off"
+ *   lineItems: LineItem[]
+ *   saveDraft?: boolean        — skip Stripe, just create checkout_draft record
+ *
+ * Subscription extra fields: frequency, preferredDay?, deliveryNotes?
+ * One-off extra fields: deliveryDate, deliveryNotes?
+ *
+ * Address (either one):
+ *   addressId: string          — use saved address
+ *   newAddress: { line1, line2?, city, postcode, label?, saveToAccount? }
  */
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let sub: SubConfig;
-  let cart: CartItem[];
+  let body: Record<string, unknown>;
   try {
-    const body = await req.json();
-    sub  = body.sub;
-    cart = body.cart ?? [];
-    if (!sub?.ingredients?.length || !sub.frequency || !sub.teamSize) {
-      throw new Error("invalid sub config");
-    }
+    body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const plan = computePlan(sub.ingredients, sub.multiplier ?? 1, sub.teamSize, sub.frequency);
+  const mode      = body.mode as string;
+  const saveDraft = body.saveDraft === true;
+
+  if (mode !== "subscription" && mode !== "one_off") {
+    return NextResponse.json({ error: "mode must be 'subscription' or 'one_off'" }, { status: 400 });
+  }
+
+  const lineItems = (body.lineItems ?? []) as LineItem[];
+  if (!Array.isArray(lineItems) || lineItems.length === 0) {
+    return NextResponse.json({ error: "lineItems is required" }, { status: 400 });
+  }
 
   const service = createServiceClient();
 
-  // ── 1. Get or create Stripe customer ────────────────────────────────────────
-  let stripeCustomerId: string;
+  // ── 1. Resolve delivery address ──────────────────────────────────────────────
+  let resolvedAddressId: string | null = null;
 
-  const { data: existingSub } = await service
-    .from("subscriptions")
-    .select("stripe_customer_id")
-    .eq("user_id", user.id)
-    .not("stripe_customer_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existingSub?.stripe_customer_id) {
-    stripeCustomerId = existingSub.stripe_customer_id;
-  } else {
-    const customer = await stripe.customers.create({
-      email: user.email,
-      metadata: { supabase_user_id: user.id },
-    });
-    stripeCustomerId = customer.id;
+  if (typeof body.addressId === "string") {
+    resolvedAddressId = body.addressId;
+  } else if (body.newAddress && typeof body.newAddress === "object") {
+    const na = body.newAddress as NewAddress;
+    if (na.saveToAccount) {
+      const { data: savedAddr } = await service
+        .from("addresses")
+        .insert({
+          user_id:  user.id,
+          type:     "delivery",
+          line1:    na.line1,
+          line2:    na.line2 ?? null,
+          city:     na.city,
+          postcode: na.postcode,
+          label:    na.label ?? null,
+        })
+        .select("id")
+        .single();
+      if (savedAddr) resolvedAddressId = savedAddr.id;
+    }
   }
 
-  // ── 2. Add one-off cart items as pending invoice items ───────────────────────
-  // Stripe will include these in the first subscription invoice automatically.
-  const VAT = 0.2;
-  for (const item of cart) {
-    if (item.quantity <= 0) continue;
-    const amountPence = toPence(item.priceExVat * (1 + VAT) * item.quantity);
-    await stripe.invoiceItems.create({
-      customer: stripeCustomerId,
-      currency: "gbp",
-      amount: amountPence,
-      description: `${item.name} × ${item.quantity} (${item.unitLabel})`,
-    });
+  // ── 2. Get or create Stripe customer (skip for draft) ────────────────────────
+  let stripeCustomerId: string | null = null;
+
+  if (!saveDraft) {
+    // Try to reuse an existing Stripe customer — wrapped in try/catch in case
+    // stripe_customer_id column doesn't exist yet (migration not run)
+    try {
+      const { data: existingSub } = await service
+        .from("subscriptions")
+        .select("stripe_customer_id")
+        .eq("user_id", user.id)
+        .not("stripe_customer_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingSub?.stripe_customer_id) {
+        stripeCustomerId = existingSub.stripe_customer_id as string;
+      }
+    } catch {
+      // Column missing — fall through to create a new customer below
+    }
+
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { supabase_user_id: user.id },
+      });
+      stripeCustomerId = customer.id;
+    }
   }
 
-  // ── 3. Create pending subscription in our DB ────────────────────────────────
-  const { data: dbSub, error: insertErr } = await service
-    .from("subscriptions")
-    .insert({
+  // ── 3. Handle subscription ───────────────────────────────────────────────────
+  if (mode === "subscription") {
+    const frequency    = body.frequency as Frequency;
+    const preferredDay = typeof body.preferredDay === "string" ? body.preferredDay : null;
+    const deliveryNotes = typeof body.deliveryNotes === "string" ? body.deliveryNotes : null;
+
+    if (!frequency) {
+      return NextResponse.json({ error: "frequency is required for subscription" }, { status: 400 });
+    }
+
+    const pricing      = sumSubPrice(lineItems, frequency);
+    const primaryItem  = lineItems[0];
+    const freqLabel    = FREQ_LABEL[frequency] ?? frequency;
+    const description  = lineItems
+      .map(i => `${i.quantity} × ${i.productSlug.replace(/_/g, " ")} ${i.format}`)
+      .join(", ");
+
+    // Build insert object — omit delivery_address_id if resolvedAddressId is null
+    // (column may not exist until migration is run)
+    const subInsert: Record<string, unknown> = {
       user_id:                  user.id,
-      ingredients:              plan.keys,
-      frequency:                plan.freq,
-      team_size:                plan.team,
-      quantity_tier:            plan.tier,
-      shots_per_drop:           plan.shotsPerDrop,
-      bottles_per_drop:         plan.bottlesPerDrop,
-      shots_per_month:          plan.shotsMonth,
-      bottles_per_month:        plan.bottlesMonth,
-      price_per_drop_ex_vat:    plan.pricePerDropExVat,
-      price_per_month_ex_vat:   plan.pricePerMonthExVat,
-      vat_per_month:            plan.vatPerMonth,
-      total_per_month_inc_vat:  plan.totalPerMonthIncVat,
-      status:                   "pending",
-      stripe_customer_id:       stripeCustomerId,
-    })
+      product_slug:             primaryItem.productSlug,
+      format:                   primaryItem.format,
+      frequency,
+      quantity_per_delivery:    primaryItem.quantity,
+      preferred_day:            preferredDay,
+      line_items:               lineItems,
+      // Computed pricing
+      price_per_drop_ex_vat:    pricing.pricePerDeliveryExVat,
+      price_per_month_ex_vat:   pricing.pricePerMonthExVat,
+      vat_per_month:            pricing.vatPerMonth,
+      total_per_month_inc_vat:  pricing.totalPerMonthIncVat,
+      // Legacy fields for schema compat
+      ingredients:              lineItems.map(i => `${i.productSlug}_${i.format}`),
+      team_size:                lineItems.reduce((s, i) => s + i.quantity, 0),
+      quantity_tier:            "1",
+      shots_per_drop:           lineItems.filter(i => i.format === "shot").reduce((s, i) => s + i.quantity, 0),
+      bottles_per_drop:         lineItems.filter(i => i.format === "share").reduce((s, i) => s + i.quantity, 0),
+      shots_per_month:          0,
+      bottles_per_month:        0,
+      status:                   "checkout_draft",
+      ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
+    };
+
+    // Attempt to include address ID — may silently fail if column not yet in schema
+    const subInsertWithAddr = resolvedAddressId
+      ? { ...subInsert, delivery_address_id: resolvedAddressId }
+      : subInsert;
+
+    const { data: dbSub, error: insertErr } = await service
+      .from("subscriptions")
+      .insert(subInsertWithAddr)
+      .select()
+      .single();
+
+    // Retry stripping any columns that don't exist yet in the DB schema
+    let finalSub = dbSub;
+    const needsRetry = insertErr?.message && (
+      insertErr.message.includes("delivery_address_id") ||
+      insertErr.message.includes("stripe_customer_id") ||
+      insertErr.message.includes("line_items") ||
+      insertErr.message.includes("product_slug") ||
+      insertErr.message.includes("quantity_per_delivery") ||
+      insertErr.message.includes("preferred_day")
+    );
+    if (needsRetry) {
+      // Fall back to only the columns guaranteed by the original schema
+      const safeInsert: Record<string, unknown> = {
+        user_id:                 user.id,
+        frequency,
+        ingredients:             lineItems.map(i => `${i.productSlug}_${i.format}`),
+        team_size:               lineItems.reduce((s, i) => s + i.quantity, 0),
+        quantity_tier:           "1",
+        shots_per_drop:          lineItems.filter(i => i.format === "shot").reduce((s, i) => s + i.quantity, 0),
+        bottles_per_drop:        lineItems.filter(i => i.format === "share").reduce((s, i) => s + i.quantity, 0),
+        shots_per_month:         0,
+        bottles_per_month:       0,
+        price_per_drop_ex_vat:   pricing.pricePerDeliveryExVat,
+        price_per_month_ex_vat:  pricing.pricePerMonthExVat,
+        vat_per_month:           pricing.vatPerMonth,
+        total_per_month_inc_vat: pricing.totalPerMonthIncVat,
+        status:                  "pending", // checkout_draft requires updated constraint
+      };
+      const { data: retried, error: retryErr } = await service
+        .from("subscriptions")
+        .insert(safeInsert)
+        .select()
+        .single();
+      if (retryErr || !retried) {
+        console.error("[checkout/session] sub insert error (safe retry):", retryErr?.message);
+        return NextResponse.json({ error: "Failed to create subscription record" }, { status: 500 });
+      }
+      finalSub = retried;
+    } else if (insertErr || !dbSub) {
+      console.error("[checkout/session] sub insert error:", insertErr?.message);
+      return NextResponse.json({ error: "Failed to create subscription record" }, { status: 500 });
+    }
+
+    // Save-as-draft: return without Stripe
+    if (saveDraft) {
+      return NextResponse.json({ saved: true, subscriptionId: finalSub!.id });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId!,
+      mode: "subscription",
+      ui_mode: "embedded_page",
+      line_items: [
+        {
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: "Juice for Teams — Monthly Subscription",
+              description: `${description} — ${freqLabel}`,
+            },
+            recurring: { interval: "month" },
+            unit_amount: toPence(pricing.totalPerMonthIncVat),
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        supabase_subscription_id: finalSub!.id,
+        supabase_user_id:         user.id,
+      },
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
+    });
+
+    await service
+      .from("subscriptions")
+      .update({ stripe_checkout_session_id: session.id })
+      .eq("id", finalSub!.id);
+
+    return NextResponse.json({ clientSecret: session.client_secret });
+  }
+
+  // ── 4. Handle one-off order ──────────────────────────────────────────────────
+  const deliveryDate  = body.deliveryDate as string;
+  const deliveryNotes = typeof body.deliveryNotes === "string" ? body.deliveryNotes : null;
+
+  if (!deliveryDate) {
+    return NextResponse.json({ error: "deliveryDate is required for one_off" }, { status: 400 });
+  }
+
+  const pricing     = sumOneOffPrice(lineItems);
+  const primaryItem = lineItems[0];
+  const description = lineItems
+    .map(i => `${i.quantity} × ${i.productSlug.replace(/_/g, " ")} ${FORMAT_META[i.format].unitLabelPlural}`)
+    .join(", ");
+
+  const orderInsert: Record<string, unknown> = {
+    user_id:         user.id,
+    product_slug:    primaryItem.productSlug,
+    format:          primaryItem.format,
+    quantity:        lineItems.reduce((s, i) => s + i.quantity, 0),
+    delivery_date:   deliveryDate,
+    delivery_notes:  deliveryNotes,
+    line_items:      lineItems,
+    subtotal_ex_vat: pricing.subtotalExVat,
+    vat:             pricing.vat,
+    total_inc_vat:   pricing.totalIncVat,
+    status:          "checkout_draft",
+    items:           [],
+  };
+
+  const orderInsertWithAddr = resolvedAddressId
+    ? { ...orderInsert, delivery_address_id: resolvedAddressId }
+    : orderInsert;
+
+  const { data: dbOrder, error: orderErr } = await service
+    .from("orders")
+    .insert(orderInsertWithAddr)
     .select()
     .single();
 
-  if (insertErr || !dbSub) {
-    return NextResponse.json({ error: "Failed to create subscription record" }, { status: 500 });
+  let finalOrder = dbOrder;
+  if (orderErr?.message?.includes("delivery_address_id") || orderErr?.message?.includes("line_items")) {
+    const { data: retried, error: retryErr } = await service
+      .from("orders")
+      .insert({ ...orderInsert, delivery_address_id: undefined, line_items: undefined })
+      .select()
+      .single();
+    if (retryErr || !retried) {
+      console.error("[checkout/session] order insert error:", retryErr?.message);
+      return NextResponse.json({ error: "Failed to create order record" }, { status: 500 });
+    }
+    finalOrder = retried;
+  } else if (orderErr || !dbOrder) {
+    console.error("[checkout/session] order insert error:", orderErr?.message);
+    return NextResponse.json({ error: "Failed to create order record" }, { status: 500 });
   }
 
-  // ── 4. Persist one-off items as an order record ─────────────────────────────
-  if (cart.length > 0) {
-    const subtotal = cart.reduce((s, i) => s + i.priceExVat * i.quantity, 0);
-    const vat      = parseFloat((subtotal * VAT).toFixed(2));
-    await service.from("orders").insert({
-      user_id:        user.id,
-      items:          cart,
-      subtotal_ex_vat: parseFloat(subtotal.toFixed(2)),
-      vat,
-      total_inc_vat:  parseFloat((subtotal + vat).toFixed(2)),
-      status:         "pending",
-    });
+  if (saveDraft) {
+    return NextResponse.json({ saved: true, orderId: finalOrder!.id });
   }
-
-  // ── 5. Create Stripe Checkout Session ──────────────────────────────────────
-  const freqLabel = FREQ_LABEL[plan.freq ?? "monthly"] ?? plan.freq;
-  const description = `${plan.labels.join(", ")} — ${plan.team} people — ${freqLabel} delivery`;
 
   const session = await stripe.checkout.sessions.create({
-    customer: stripeCustomerId,
-    mode: "subscription",
+    customer: stripeCustomerId!,
+    mode: "payment",
     ui_mode: "embedded_page",
-    line_items: [
-      {
-        price_data: {
-          currency: "gbp",
-          product_data: {
-            name: "Juice for Teams — Monthly Subscription",
-            description,
-          },
-          recurring: { interval: "month" },
-          unit_amount: toPence(plan.totalPerMonthIncVat),
+    line_items: lineItems.map(item => ({
+      price_data: {
+        currency: "gbp",
+        product_data: {
+          name: `${item.productSlug.replace(/_/g, " ")} — ${FORMAT_META[item.format].label}`,
         },
-        quantity: 1,
+        unit_amount: toPence(computeOneOffPrice(item.format, item.quantity).totalIncVat),
       },
-    ],
+      quantity: 1,
+    })),
     metadata: {
-      supabase_subscription_id: dbSub.id,
-      supabase_user_id: user.id,
+      supabase_order_id: finalOrder!.id,
+      supabase_user_id:  user.id,
     },
     return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
   });
 
-  // Save session ID to our subscription record
   await service
-    .from("subscriptions")
-    .update({ stripe_checkout_session_id: session.id })
-    .eq("id", dbSub.id);
+    .from("orders")
+    .update({ stripe_payment_intent_id: session.payment_intent as string })
+    .eq("id", finalOrder!.id);
 
   return NextResponse.json({ clientSecret: session.client_secret });
 }
