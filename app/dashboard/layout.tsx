@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 import { DbSidebarNav } from "@/components/db-sidebar-nav";
+import { isAdmin } from "@/lib/admin";
 import type { ReactNode } from "react";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -50,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   return (
     <div className="db-shell">
       {/* ── Sidebar ── */}
-      <DbSidebarNav />
+      <DbSidebarNav isAdmin={isAdmin(user.email)} />
 
       {/* ── Main area ── */}
       <div className="db-main">

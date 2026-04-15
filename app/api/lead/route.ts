@@ -1,5 +1,9 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import { sendStep1Email, sendQuoteEmail } from "@/lib/email";
+import {
+  sendStep1Email,
+  sendQuoteEmail,
+  sendExistingUserLoginPromptEmail,
+} from "@/lib/email";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
@@ -17,6 +21,9 @@ function makeResend() {
  *
  * Also used as a fallback for step 4 if step 1 never got a leadId
  * (in that case the full plan fields are included in the body).
+ *
+ * If the email already exists in auth.users, returns { existingUser: true }
+ * and sends a login-prompt email instead.
  */
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -36,7 +43,41 @@ export async function POST(request: Request) {
     );
   }
 
-  // Determine if this is a full submission (step-4 fallback) or partial (step-1)
+  const supabase = createServiceClient();
+
+  // ── Check if email already exists in auth.users ──────────────────────────
+  const { data: authData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 500 });
+  const existingAuthUser = (authData?.users ?? []).find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  );
+
+  if (existingAuthUser) {
+    // Send login-prompt email (best-effort)
+    const resend = makeResend();
+    let emailStatus: "sent" | "failed" = "failed";
+    if (resend) {
+      try {
+        await sendExistingUserLoginPromptEmail(resend, { to: email, company });
+        emailStatus = "sent";
+      } catch (err) {
+        console.error("[/api/lead POST] existing-user email error:", err);
+      }
+    }
+
+    // Log the email send
+    await supabase.from("email_logs").insert({
+      to_email: email,
+      to_user_id: existingAuthUser.id,
+      subject: "You already have a Juice for Teams account",
+      template_name: "existing_user_login_prompt",
+      status: emailStatus,
+      metadata: { company },
+    });
+
+    return NextResponse.json({ existingUser: true });
+  }
+
+  // ── Determine if this is a full submission (step-4 fallback) or partial ──
   const isFull = Boolean(body.frequency);
 
   const row: Record<string, unknown> = {
@@ -44,6 +85,8 @@ export async function POST(request: Request) {
     company,
     role: body.role ?? null,
     signup_complete: false,
+    crm_status: "new",
+    crm_source: "landing_page",
   };
 
   if (isFull) {
@@ -65,7 +108,6 @@ export async function POST(request: Request) {
 
   let leadId: string | null = null;
   try {
-    const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("leads")
       .insert(row)
@@ -80,8 +122,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
-  // Send email (best-effort — never block on email failure)
+  // ── Send email and log it ─────────────────────────────────────────────────
   const resend = makeResend();
+  let emailStatus: "sent" | "failed" = "failed";
+  const templateName = isFull ? "quote" : "step1_finish_setup";
+  const subject = isFull
+    ? `Your Juice for Teams quote — ${company}`
+    : "Finish setting up your Juice for Teams subscription";
+
   if (resend) {
     try {
       if (isFull) {
@@ -89,9 +137,22 @@ export async function POST(request: Request) {
       } else {
         await sendStep1Email(resend, { to: email, company });
       }
+      emailStatus = "sent";
     } catch (err) {
       console.error("[/api/lead POST] Email error:", err);
     }
+  }
+
+  // Log the email
+  if (leadId) {
+    await supabase.from("email_logs").insert({
+      to_email: email,
+      to_lead_id: leadId,
+      subject,
+      template_name: templateName,
+      status: emailStatus,
+      metadata: { company, isFull },
+    });
   }
 
   return NextResponse.json({ leadId });

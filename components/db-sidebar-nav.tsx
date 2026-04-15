@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-export function DbSidebarNav() {
+export function DbSidebarNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const path = usePathname();
 
   const [collapsed, setCollapsed] = useState(false);
@@ -107,6 +107,19 @@ export function DbSidebarNav() {
           </svg>
           <span>Feedback</span>
         </a>
+
+        {isAdmin && (
+          <>
+            <span className="db-nav__section">Admin</span>
+            <a href="/admin/leads" className="db-nav__item" title="CRM">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="1.5" y="1.5" width="12" height="12" rx="1.5" />
+                <path d="M4.5 5.5h6M4.5 7.5h6M4.5 9.5h4" />
+              </svg>
+              <span>CRM</span>
+            </a>
+          </>
+        )}
 
         <div className="db-nav__spacer" />
 

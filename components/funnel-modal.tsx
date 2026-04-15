@@ -64,6 +64,7 @@ export function FunnelModal({
   const [submitError, setSubmitError] = useState("");
   const [submitPending, setSubmitPending] = useState(false);
   const [step1Saving, setStep1Saving] = useState(false);
+  const [existingUser, setExistingUser] = useState(false);
   const [leadId, setLeadId] = useState<string | null>(null);
 
   // Prevents the submit button from being active the instant step 4 renders.
@@ -92,6 +93,7 @@ export function FunnelModal({
     setSubmitError("");
     setSubmitPending(false);
     setStep1Saving(false);
+    setExistingUser(false);
     setLeadId(null);
     setStep4Ready(false);
   }, []);
@@ -192,6 +194,7 @@ export function FunnelModal({
 
   async function handleStep1Continue() {
     setSubmitError("");
+    setExistingUser(false);
     if (!validateStep(1)) return;
     setStep1Saving(true);
     try {
@@ -205,7 +208,12 @@ export function FunnelModal({
         }),
       });
       if (res.ok) {
-        const json = await res.json() as { leadId?: string };
+        const json = await res.json() as { leadId?: string; existingUser?: boolean };
+        if (json.existingUser) {
+          setExistingUser(true);
+          setStep1Saving(false);
+          return;
+        }
         if (json.leadId) setLeadId(json.leadId);
       }
     } catch {
@@ -435,6 +443,30 @@ export function FunnelModal({
                     onChange={(e) => setRole(e.target.value)}
                   />
                 </label>
+                {existingUser && (
+                  <div
+                    role="alert"
+                    style={{
+                      marginTop: 8,
+                      padding: "12px 16px",
+                      borderRadius: 8,
+                      background: "#fef3c7",
+                      border: "1px solid #fcd34d",
+                      color: "#92400e",
+                      fontSize: "0.9rem",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    You already have an account —{" "}
+                    <a
+                      href="/auth/login"
+                      style={{ color: "#92400e", fontWeight: 600, textDecoration: "underline" }}
+                    >
+                      sign in to continue your subscription
+                    </a>
+                    .
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,6 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { sendSubscriptionCreatedEmail } from "@/lib/email";
 import { NextResponse } from "next/server";
+import { Resend } from "resend";
+
+function makeResend() {
+  return process.env.RESEND_API_KEY
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
+}
 
 /**
  * GET /api/subscription
@@ -33,6 +41,7 @@ export async function GET() {
  * POST /api/subscription
  * Creates a pending subscription for the authenticated user.
  * Called when a logged-in user completes the funnel (steps 2–4).
+ * Sends a subscription confirmation email and logs it.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -77,6 +86,49 @@ export async function POST(request: Request) {
   if (error) {
     console.error("[POST /api/subscription]", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // ── Send confirmation email (best-effort) ─────────────────────────────────
+  const userEmail = user.email ?? "";
+  const resend = makeResend();
+  let emailStatus: "sent" | "failed" = "failed";
+
+  if (resend && userEmail) {
+    // Try to resolve company name from linked lead
+    let company = userEmail.split("@")[0];
+    if (data.lead_id) {
+      const { data: lead } = await service
+        .from("leads")
+        .select("company")
+        .eq("id", data.lead_id)
+        .single();
+      if (lead?.company) company = lead.company;
+    }
+
+    try {
+      await sendSubscriptionCreatedEmail(resend, {
+        to: userEmail,
+        company,
+        body: {
+          frequency:               data.frequency,
+          team_size:               data.team_size,
+          price_per_month_ex_vat:  data.price_per_month_ex_vat,
+          total_per_month_inc_vat: data.total_per_month_inc_vat,
+        },
+      });
+      emailStatus = "sent";
+    } catch (err) {
+      console.error("[POST /api/subscription] confirmation email error:", err);
+    }
+
+    await service.from("email_logs").insert({
+      to_email: userEmail,
+      to_user_id: user.id,
+      subject: "Your Juice for Teams subscription is confirmed",
+      template_name: "subscription_created",
+      status: emailStatus,
+      metadata: { subscription_id: data.id },
+    });
   }
 
   return NextResponse.json({ subscription: data });

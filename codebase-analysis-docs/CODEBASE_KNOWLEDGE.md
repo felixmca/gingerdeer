@@ -1,352 +1,708 @@
 # Juice for Teams — Codebase Knowledge (Master Document)
 
-**INDEX_VERSION:** 1.0  
-**Repo:** `juice-for-teams` (package name) — workspace folder may be named “Juice”; **application code is TypeScript/Next.js, not Python.**  
-**Last analyzed:** 2026-04-11  
+**INDEX_VERSION:** 2.0  
+**Repo:** `juice-for-teams` (package name) — workspace folder named "Juice"; code is TypeScript/Next.js.  
+**Last fully analyzed:** 2026-04-15  
+**Root path:** `/mnt/c/Users/felix/Desktop/Python Projects/Juice`
 
-This document is written for another LLM or engineer with **no repo access**. File paths are **relative to the repository root**.
-
----
-
-## High-level overview
-
-### What the application is
-
-**Juice for Teams** is a **single marketing landing page** with an embedded **multi-step “subscription workflow” modal** (proof-of-concept). It targets **B2B buyers** (People Ops, HR) considering **recurring ginger juice / shots** as an employee perk. The UI explains value props, demos the signup flow, and optionally **persists lead data to Supabase** (`public.leads`).
-
-### Main features and business purpose
-
-| Feature | Business purpose |
-|--------|-------------------|
-| **Marketing landing** (`components/landing-page.tsx`) | Educate HR/buyers; anchor CTAs that open the funnel. |
-| **4-step + success funnel** (`components/funnel-modal.tsx`) | Capture intent: contact, product mix, cadence, volume; show live estimates. |
-| **Delivery calculator** (`lib/funnel-logic.ts` + step 4 UI) | Make abstract “subscription” tangible (shots/bottles per drop and per month). |
-| **Lead persistence** (browser Supabase client → `leads` table) | Store submissions for sales/ops follow-up when env + DB are configured. |
-| **Supabase session middleware** (`middleware.ts`, `lib/supabase/middleware.ts`) | Standard `@supabase/ssr` pattern: refresh auth cookies on navigation. **No login UI** in this app; effect is mostly preparatory. |
-
-### How features relate (conceptual)
-
-1. **Landing** drives traffic to **one primary action**: open the funnel.  
-2. **Funnel** uses **shared pure logic** (`computePlan`) so the **calculator** and **submitted row** stay consistent.  
-3. **Submit** either logs to console only (Supabase not configured) or **inserts** one row into **`public.leads`** (when configured).  
-4. **Middleware** runs on almost every request to keep **Supabase auth cookies** in sync; the funnel does not depend on logged-in users.
-
-**Decisions / findings:** The product is an **MVP demo**: no dashboard, no payment, no email automation in code.  
-**Open questions:** Whether production will add auth, admin views, or server-side lead ingestion.  
-**Next steps for implementers:** Confirm privacy policy, rate limiting, and whether anon `INSERT` on `leads` is acceptable long term.
+> This document is written so any LLM or engineer with no repo access can understand the full system. All paths are relative to the repo root.
 
 ---
 
-## Tech stack
+## 1. What the application is
 
-| Layer | Choice | Evidence |
-|-------|--------|----------|
-| Framework | **Next.js 15** (App Router) | `package.json`, `app/` |
-| UI | **React 19** | `package.json` |
-| Language | **TypeScript** (strict) | `tsconfig.json` |
-| Backend-as-data | **Supabase** (`@supabase/supabase-js`, `@supabase/ssr`) | `lib/supabase/*`, `supabase/schema.sql` |
-| Styling | **Global CSS** + CSS variables (no Tailwind) | `app/globals.css` |
-| Fonts | **next/font/google** — Fraunces, Source Sans 3 | `app/layout.tsx` |
+**Juice for Teams** is a B2B SaaS MVP targeting HR/People Ops teams who want to offer ginger juice shots and bottles as an employee perk. It is at the **lead-capture + early-auth stage** — no Stripe/payment, no real subscription fulfilment yet.
 
-**Not present:** Python runtime, REST API routes (`app/api` absent), tests, CI config, Docker, ORM migrations (only a manual `schema.sql`).
+### User journeys
+
+| User type | Journey |
+|-----------|---------|
+| **Anonymous visitor** | Lands on `/`, opens funnel modal, submits lead → gets quote email, redirected to sign up |
+| **Authenticated user** | Logs in → dashboard → configures recurring subscription or places one-off order |
+| **Admin** | Visits `/admin` → sees all leads table |
 
 ---
 
-## Directory structure (source-only)
+## 2. Tech stack
+
+| Layer | Choice |
+|-------|--------|
+| Framework | **Next.js 15** (App Router) |
+| UI | **React 19**, TypeScript |
+| Backend data | **Supabase** (auth + Postgres) via `@supabase/ssr` |
+| Email | **Resend** (`resend` npm package) |
+| Styling | **Plain CSS** (globals.css, ~3400 lines) — no Tailwind |
+| Fonts | `next/font/google`: **Fraunces** (serif, headlines) + **Outfit** (sans, body/UI) |
+| Deployment | Vercel (inferred from env var docs) |
+
+---
+
+## 3. Directory structure
 
 ```
 app/
-  layout.tsx          # Root layout, fonts, metadata
-  page.tsx            # Home → <LandingPage />
-  globals.css         # All layout + modal + funnel styles
+  layout.tsx                     # Root layout: fonts, global metadata
+  page.tsx                       # / → <LandingPage />
+  globals.css                    # ALL styles (CSS variables, layout, modal, dashboard, settings, etc.)
+  admin/
+    page.tsx                     # /admin — leads table, admin-only server page
+  api/
+    account/
+      route.ts                   # PATCH /api/account — update display name
+    address/
+      route.ts                   # GET + POST /api/address
+      [id]/
+        route.ts                 # PATCH + DELETE /api/address/[id]
+    lead/
+      route.ts                   # POST /api/lead
+      [id]/
+        route.ts                 # PATCH /api/lead/[id]
+    subscription/
+      route.ts                   # GET + POST /api/subscription
+      [id]/
+        route.ts                 # PATCH /api/subscription/[id]
+  auth/
+    callback/
+      route.ts                   # GET /auth/callback — OAuth code exchange + lead linking
+    login/
+      page.tsx                   # /auth/login — Google OAuth + email/password
+    signout/
+      route.ts                   # GET /auth/signout — signs out, redirects to /
+  dashboard/
+    layout.tsx                   # Auth guard + sidebar + topbar shell
+    page.tsx                     # /dashboard — product bento + quick links
+    feedback/
+      page.tsx                   # Placeholder (coming soon)
+    juice-types/
+      page.tsx                   # /dashboard/juice-types → DbJuiceTypesPage
+    one-off/
+      page.tsx                   # /dashboard/one-off → DbOneOffPage
+    orders/
+      page.tsx                   # /dashboard/orders → DbOrdersPage
+    reviews/
+      page.tsx                   # Placeholder (coming soon)
+    settings/
+      page.tsx                   # /dashboard/settings → DbSettingsPage (server-fetches user, passes down)
+    subscriptions/
+      page.tsx                   # /dashboard/subscriptions → DbSubscriptionPage
+  juice-types/
+    page.tsx                     # /juice-types — public product catalog page
+
 components/
-  landing-page.tsx    # Full-page marketing + funnel trigger
-  funnel-modal.tsx    # Client modal: steps1–4, submit, success
+  landing-page.tsx               # Full marketing landing page (client); opens FunnelModal
+  funnel-modal.tsx               # 4-step lead funnel (client); anon + logged-in paths
+  db-sidebar-nav.tsx             # Dashboard sidebar nav (client; reads pathname, localStorage collapse)
+  db-orders-page.tsx             # Orders page UI (client)
+  db-subscription-page.tsx       # Subscriptions list + filter + new sub modal (client)
+  db-subscription-modal.tsx      # "New subscription" modal — re-uses funnel logic (client)
+  db-subscription-detail-modal.tsx  # Subscription detail + status controls (client)
+  db-one-off-page.tsx            # One-off orders list + new order trigger (client)
+  db-one-off-modal.tsx           # One-off order creation modal — 3 steps (client)
+  db-juice-types-page.tsx        # Product catalog component (client)
+  db-settings-page.tsx           # Settings: Account + Addresses tabs (client)
+  db-product-carousel.tsx        # Product carousel component (client)
+
 lib/
-  funnel-logic.ts     # Plan math, labels, ingredient metadata
+  funnel-logic.ts                # Pure math: computePlan(), pricing constants, INGREDIENT_META
+  subscription-meta.ts           # Types + display helpers for subscriptions (SubRow, SLUG_META, etc.)
+  address.ts                     # Types + formatting helpers for addresses (AddressRow, addressBlock, etc.)
+  email.ts                       # Resend email templates: sendStep1Email, sendQuoteEmail
   supabase/
-    client.ts         # Browser client + isSupabaseConfigured()
-    server.ts         # Server client (cookies) — unused by funnel today
-    middleware.ts     # updateSession() for root middleware
-middleware.ts         # Next.js middleware entry
+    client.ts                    # Browser Supabase client (anon key)
+    server.ts                    # Server Supabase client (anon key + cookies)
+    middleware.ts                # updateSession() for edge middleware
+    service.ts                   # Service-role client (server-only, bypasses RLS)
+
+middleware.ts                    # Edge middleware entry point (delegates to updateSession)
 supabase/
-  schema.sql          # DDL + RLS for public.leads
-```
-
-**Build artifacts / deps (ignore for behavior):** `node_modules/`, `.next/`.
-
----
-
-## System architecture (deep dive)
-
-### Component map
-
-- **Entry:** `app/page.tsx` → `LandingPage`.  
-- **Client islands:** `landing-page.tsx` and `funnel-modal.tsx` are `"use client"`.  
-- **Server:** `app/layout.tsx` is a Server Component; no data fetching there.  
-- **Edge:** `middleware.ts` delegates to `updateSession` which calls `supabase.auth.getUser()` to refresh the session.
-
-### Data flow (user → persistence)
-
-```mermaid
-sequenceDiagram
-  participant U as User
-  participant LP as LandingPage
-  participant FM as FunnelModal
-  participant FL as computePlan
-  participant SB as Supabase (browser)
-  participant DB as public.leads
-
-  U->>LP: CTA click
-  LP->>FM: open modal
-  U->>FM: steps 1–4
-  FM->>FL: computePlan(...)
-  FM->>FM: validate steps
-  alt Supabase configured
-    FM->>SB: from("leads").insert(row)
-    SB->>DB: INSERT
-    DB-->>SB: ok / error
-    SB-->>FM: result
-  else Not configured
-    FM->>FM: console.log(row)&#59; success UI
-  end
-```
-
-**Diagram files (editable):** `codebase-analysis-docs/assets/architecture.mmd`, `codebase-analysis-docs/assets/schema-er.mmd`.
-
-### Third-party integrations
-
-- **Supabase Auth + DB:** URL and anon/publishable key from **public** env vars (`NEXT_PUBLIC_SUPABASE_*`).  
-- **Google Fonts** via Next.js font optimization.
-
-### Cross-cutting concerns
-
-| Concern | Implementation |
-|--------|----------------|
-| **Auth** | Middleware refreshes session; **no sign-in UI** or protected routes in this codebase. |
-| **Security** | RLS on `leads`: **anon can INSERT only** (`with check (true)`), no SELECT for anon. Keys are **exposed to the browser** by design (anon key). |
-| **Logging** | `console.log` on submit; `console.error` on Supabase failure. |
-| **Caching** | None explicit; static marketing page. |
-| **Accessibility** | Skip link, `aria` on modal progress, focus management on step 1 email. |
-
-### Architectural patterns
-
-- **App Router** with minimal server surface.  
-- **Supabase SSR cookie pattern** (`createServerClient` in middleware and `lib/supabase/server.ts`).  
-- **Pure domain logic** isolated in `lib/funnel-logic.ts` (easy to unit test later).  
-- **Optional integration:** `isSupabaseConfigured()` gates DB writes.
-
-**Decisions / findings:** `lib/supabase/server.ts` is set up for Server Components/API routes but **no caller** exists yet for leads.  
-**Open questions:** Whether to move inserts to a **server action** or API route to hide operations behind validation.  
-**Next steps:** If adding auth, align middleware + RLS policies with real user roles.
-
----
-
-## Feature-by-feature analysis
-
-### F1 — Marketing landing page
-
-- **Purpose:** Position “Juice for Teams” for HR; explain workflow vs. episodic perks.  
-- **Entry:** `/` → `app/page.tsx` → `LandingPage`.  
-- **Technical:** Single client component with local `funnelOpen` state; multiple buttons set `setFunnelOpen(true)`. Anchor links (`#how-it-works`, etc.) rely on `scroll-behavior: smooth` in `globals.css`.  
-- **Interactions:** Only opens `FunnelModal`; no API.  
-- **Edge cases:** Logo uses `href="#"` (scroll to top behavior only).
-
-### F2 — Multi-step funnel modal
-
-- **Purpose:** Collect **email, company, role**, **ingredient mix**, **frequency**, **team size**, **quantity tier**; show success recap.  
-- **Entry:** `FunnelModal` from `LandingPage`.  
-- **State machine:** `step` is `1 | 2 | 3 | 4 | "success"`; `MAX_STEP = 4`.  
-- **Validation:** HTML5 email validity + custom company check; `window.alert` for steps 2–4 omissions (`validateStep`).  
-- **UX:** Escape closes; backdrop closes; `body.modal-open` locks scroll; focus on email when opening step 1.  
-- **Submit (`handleSubmit`):** Builds `row` object; logs `console.log("Juice for Teams — subscription POC:", row)`; if `isSupabaseConfigured()`, `insert` into `leads`.  
-- **Success:** Always moves to `"success"` when submit succeeds **without** Supabase error; `savedToSupabase` distinguishes null (not attempted) / true / false for messaging.  
-- **Interactions:** Imports `computePlan`, constants from `lib/funnel-logic.ts`; `createClient` from `lib/supabase/client.ts`.  
-- **Hidden dependencies:** DB must match columns in `supabase/schema.sql`; error message tells user to run schema in SQL editor.
-
-### F3 — Plan / calculator (`lib/funnel-logic.ts`)
-
-- **Purpose:** Derive **shots/bottles per drop** and **per month** from ingredients, tier multiplier, team size, frequency.  
-- **Rules (hardcoded):**  
-  - Each ingredient maps to shot and/or bottle counts per person via `INGREDIENT_META`.  
-  - `TIER_MULT`: light `0.85`, standard `1`, generous `1.45`.  
-  - `FREQ_DELIVERIES_PER_MONTH`: weekly `52/12`, biweekly `26/12`, monthly `1`.  
-- **Formula:** Per drop: `round(team * perPerson * tierMult)` for shots and bottles separately; per month: `round(perDrop * deliveriesPerMonth)`.  
-- **Interactions:** Used only by `FunnelModal` for display + insert payload.
-
-### F4 — Supabase: browser client (`lib/supabase/client.ts`)
-
-- **`createClient()`:** `createBrowserClient(url, anonKey)`.  
-- **`isSupabaseConfigured()`:** Both `NEXT_PUBLIC_SUPABASE_URL` and anon/publishable key must be non-empty.  
-- **Key resolution:** `NEXT_PUBLIC_SUPABASE_ANON_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-
-### F5 — Supabase: middleware session refresh
-
-- **`lib/supabase/middleware.ts` — `updateSession`:** Creates a server client bound to request/response cookies; `await supabase.auth.getUser()`; returns `NextResponse.next` with cookies applied.  
-- **`middleware.ts`:** Matcher excludes static assets and image extensions.  
-- **Interactions:** Every matched request pays one auth refresh call (lightweight if no session).
-
-### F6 — Database schema & RLS (`supabase/schema.sql`)
-
-- **Table `public.leads`:** Columns align with `row` in `funnel-modal.tsx` (`quantity_tier`, `team_size`, computed int fields, `ingredients text[]`, etc.).  
-- **RLS:** Enabled; policy **`leads_insert_anon`** allows **`INSERT` for `anon`** with **`with check (true)`** (any row shape allowed by table constraints).  
-- **Grants:** `anon` may `INSERT` only (no SELECT/UPDATE/DELETE).
-
-**Cross-feature map:** `LandingPage` → `FunnelModal` → `computePlan` + optional `insert(leads)`. Middleware is orthogonal (session refresh).
-
-**Decisions / findings:** Success screen shows a **hint** when Supabase was not used (`savedToSupabase !== true` includes both `null` and unconfigured paths — actually when not configured, `didSave` stays `null`, and success still shows; the recap lists env instructions when `savedToSupabase !== true`, which includes `null` i.e. not saved to cloud).  
-**Open questions:** Product copy promises “saved” even when only console logging — clarify for production.  
-**Next steps:** Add server-side validation and spam protection before public launch.
-
----
-
-## Nuances, subtleties, and gotchas
-
-### Things you must know before changing code
-
-1. **Anon INSERT is wide open:** Any client with the anon key can insert arbitrary rows into `leads` (subject to column types). Mitigate with CAPTCHA, rate limits, Edge Functions, or server-side proxy.  
-2. **Secrets in repo risk:** A file `password supabase.txt` exists at repo root (not analyzed here). **Rotate credentials** if this was ever committed or shared; prefer env-only secrets.  
-3. **`NEXT_PUBLIC_*` keys are public:** Standard for Supabase anon key but means **RLS is the security boundary**.  
-4. **Tier default in plan:** `computePlan` uses `quantityTier || "standard"` in the modal when computing `plan`; step 4 still requires explicit tier before continue — consistent for submit.  
-5. **`noValidate` on form:** Native validation bypassed on form; email validity checked manually via ref in step 1.  
-6. **`quantityTier` state vs. `plan.tier`:** Submit uses `plan.tier` from `computePlan(..., quantityTier || "standard", ...)` — if somehow tier were empty at submit, tier would still be `"standard"` in payload.  
-7. **Frequency null guard:** Submit checks `plan.freq` and errors if missing.  
-8. **Ingredient keys:** Must stay in sync among `INGREDIENT_OPTIONS` in `funnel-modal.tsx`, `INGREDIENT_META` in `funnel-logic.ts`, and any reporting downstream.  
-9. **Server Supabase client unused for leads:** Refactor to server actions would duplicate cookie handling in `lib/supabase/server.ts`.  
-10. **No tests:** Changes to `computePlan` can silently break business numbers — add unit tests first.
-
-### Performance
-
-- Small static page; main cost is **middleware** on each navigation and **client bundle** size (React + Supabase). No image CDN or heavy data fetching.
-
-### Security implications (summary)
-
-- **RLS:** Insert-only anon is intentional for POC; **not** suitable for high-trust production without abuse controls.  
-- **PII:** Email and company stored in plain text in Supabase.
-
-**Decisions / findings:** The app is a **deliberate MVP** balancing speed vs. hardening.  
-**Open questions:** Compliance (GDPR), data retention, and lead export process.  
-**Next steps:** Add monitoring for `leads` table growth and failed inserts.
-
----
-
-## Technical reference and glossary
-
-### Glossary (domain)
-
-| Term | Meaning |
-|------|---------|
-| **Drop** | One delivery batch to the team. |
-| **Shot** | 60ml shot-style SKU (see ingredient options). |
-| **Bottle** | 500ml bottle SKU (`apple_juice`). |
-| **Cadence / frequency** | `weekly`, `biweekly`, `monthly`. |
-| **Quantity tier** | `light`, `standard`, `generous` — scales per-person amounts. |
-| **Lead** | One funnel submission row in `public.leads`. |
-
-### Key symbols (files → exports)
-
-| Path | Symbol | Role |
-|------|--------|------|
-| `middleware.ts` | `middleware` | Invokes `updateSession`. |
-| `lib/supabase/middleware.ts` | `updateSession` | Refreshes Supabase auth cookies. |
-| `lib/supabase/client.ts` | `createClient`, `isSupabaseConfigured` | Browser Supabase + env check. |
-| `lib/supabase/server.ts` | `createClient` | Server Component Supabase (async cookies). |
-| `lib/funnel-logic.ts` | `computePlan`, `INGREDIENT_META`, `TIER_MULT`, `FREQ_DELIVERIES_PER_MONTH`, labels | Pure planning math and copy maps. |
-| `components/landing-page.tsx` | `LandingPage` | Marketing shell + funnel open state. |
-| `components/funnel-modal.tsx` | `FunnelModal` | Wizard UI + submit + Supabase insert. |
-
-### Database schema (authoritative)
-
-Source: `supabase/schema.sql`.
-
-- **`public.leads`:** `id` (uuid, default `gen_random_uuid()`), `created_at`, `email`, `company`, `role` (nullable), `ingredients` (`text[]`), `frequency`, `quantity_tier`, `team_size`, `shots_per_drop`, `bottles_per_drop`, `shots_per_month`, `bottles_per_month`.  
-- **RLS:** `leads_insert_anon` FOR INSERT TO `anon` WITH CHECK (true).
-
-**ER diagram:** `codebase-analysis-docs/assets/schema-er.mmd`.
-
-### Environment variables
-
-Documented in `.env.example`:
-
-- `NEXT_PUBLIC_SUPABASE_URL`  
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` per `lib/supabase/*.ts`)
-
-### Internal “API” surface
-
-- **No HTTP API** implemented in Next.js.  
-- **Supabase client API used:** `supabase.from("leads").insert(row)` from the browser (`funnel-modal.tsx`).  
-- **Example payload shape (insert):** fields in `row` object in `handleSubmit` inside `components/funnel-modal.tsx` (`email`, `company`, `role`, `ingredients`, `frequency`, `quantity_tier`, `team_size`, shot/bottle aggregates).
-
----
-
-## File index (Pass 0 — prioritization)
-
-**Scoring note:** Entry points and high-coupling modules scored highest; `node_modules`/`.next` omitted.
-
-| # | Priority | Path | Type | Lines | NOTES |
-|---|----------|------|------|-------|-------|
-| 1 | P0 | `components/funnel-modal.tsx` | UI + integration | 522 | Wizard, validation, Supabase insert |
-| 2 | P0 | `lib/funnel-logic.ts` | Domain | 82 | All quantity math |
-| 3 | P1 | `components/landing-page.tsx` | UI | 232 | Marketing + CTA wiring |
-| 4 | P1 | `app/globals.css` | Styles | 857 | Single stylesheet |
-| 5 | P1 | `supabase/schema.sql` | DDL/RLS | 29 | Must match insert payload |
-| 6 | P2 | `lib/supabase/client.ts` | Client lib | 18 | Env gating |
-| 7 | P2 | `lib/supabase/middleware.ts` | Edge lib | 40 | Session refresh |
-| 8 | P2 | `middleware.ts` | Edge entry | 10 | Matcher config |
-| 9 | P3 | `app/layout.tsx` | Server UI | 29 | Metadata, fonts |
-| 10 | P3 | `app/page.tsx` | Server UI | 4 | Route composition |
-| 11 | P3 | `lib/supabase/server.ts` | Server lib | 40 | Reserved for future |
-| 12 | P4 | `next.config.ts` | Config | 3 | Empty options |
-| 13 | P4 | `package.json` | Manifest | — | Dependencies |
-| 14 | P4 | `tsconfig.json` | Config | — | `@/*` paths |
-
-*HASH8 omitted — stable line counts captured on 2026-04-11 from workspace.*
-
----
-
-## Chunking notes (for large-codebase continuation)
-
-Example chunk IDs if this repo grows:
-
-- `CHUNK_ID = components/funnel-modal.tsx#1-280#…` — state, validation, navigation  
-- `CHUNK_ID = components/funnel-modal.tsx#281-560#…` — render, submit, success  
-
-Current repo fits full-file reads; chunking is optional.
-
----
-
-## Assumptions (with confidence)
-
-| Assumption | Confidence |
-|------------|------------|
-| Product is POC/MVP for internal or pilot use | High (copy + console log + open anon insert) |
-| No production auth flows yet | High (no login UI) |
-| `password supabase.txt` may contain sensitive data | Medium (filename only; content not read) |
-
----
-
-## Appendix A — STATE BLOCK (latest)
-
-```
-INDEX_VERSION: 1.0
-FILE_MAP_SUMMARY: ~14 first-party TS/TSX/CSS/SQL files; single route /; no app/api; supabase/schema.sql defines leads.
-OPEN_QUESTIONS: Production hardening? Move insert server-side? Remove or secure password file in repo root?
-KNOWN_RISKS: Open anon INSERT; public anon key; possible credentials file in tree; no automated tests.
-GLOSSARY_DELTA: (none beyond main glossary)
+  schema.sql                     # Authoritative DDL + RLS + grants (run manually in Supabase SQL Editor)
+codebase-analysis-docs/          # Documentation (this folder)
+  CODEBASE_KNOWLEDGE.md
+  assets/
+    architecture.mmd
+    schema-er.mmd
 ```
 
 ---
 
-## Appendix B — Continuation protocol
+## 4. Database schema (complete & authoritative)
 
-If analysis must resume elsewhere: re-ingest **Appendix A STATE BLOCK**, then prioritize **NEXT_READ_QUEUE**:
+All tables are in the `public` schema. Run `supabase/schema.sql` in Supabase SQL Editor to (re-)create everything.
 
-1. `components/funnel-modal.tsx` (submit + error paths)  
-2. `lib/funnel-logic.ts` (math changes)  
-3. `supabase/schema.sql` (RLS migrations)  
+### 4.1 `public.leads`
 
-**CONTINUE_REQUEST:** Not required — repository fully covered.
+Stores funnel submissions. Both anonymous and authenticated paths write here.
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| id | uuid | PK, default gen_random_uuid() | |
+| created_at | timestamptz | not null, default now() | |
+| email | text | not null | |
+| company | text | not null | |
+| role | text | nullable | e.g. "HR Manager" |
+| ingredients | text[] | not null, default '{}' | Array of ingredient slugs |
+| frequency | text | nullable | 'weekly' \| 'biweekly' \| 'monthly' |
+| quantity_tier | text | nullable | Multiplier string: '0.5' \| '1.0' \| '1.5' \| '2.0' |
+| team_size | int | nullable | |
+| shots_per_drop | int | not null, default 0 | 100ml shots per delivery |
+| bottles_per_drop | int | not null, default 0 | 1L bottles per delivery |
+| shots_per_month | int | not null, default 0 | |
+| bottles_per_month | int | not null, default 0 | |
+| price_per_drop_ex_vat | numeric(10,2) | nullable | |
+| price_per_month_ex_vat | numeric(10,2) | nullable | |
+| vat_per_month | numeric(10,2) | nullable | |
+| total_per_month_inc_vat | numeric(10,2) | nullable | |
+| signup_complete | boolean | not null, default false | Set to true when user creates account |
+| user_id | uuid | nullable, FK → auth.users(id), ON DELETE SET NULL | Linked after sign-up |
+
+**RLS policies:**
+- `leads_insert_anon` — FOR INSERT TO anon WITH CHECK (true) — anyone can insert
+- `leads_select_owner` — FOR SELECT TO authenticated USING (user_id = auth.uid())
+- `leads_update_owner` — FOR UPDATE TO authenticated USING (user_id = auth.uid())
+
+**Grants:** anon: INSERT; authenticated: SELECT, UPDATE
 
 ---
 
-*End of CODEBASE_KNOWLEDGE.md*
+### 4.2 `public.ingredients`
+
+Product catalogue. Read-only for clients; managed via Supabase dashboard or service role.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| slug | text | UNIQUE — matches keys in leads.ingredients[] and app code |
+| name | text | e.g. "All-in-one" |
+| format | text | CHECK in ('shot', 'share') |
+| size_ml | int | 100 for shots, 1000 for share |
+| servings_per_unit | int | 1 for shots, 10 for 1L bottles |
+| price_ex_vat | numeric(10,2) | |
+| price_per_serving_ex_vat | numeric(10,2) | GENERATED: price_ex_vat / servings_per_unit |
+| unit_label | text | e.g. "100ml shot" |
+| sort_order | int | |
+| available | boolean | default true |
+| created_at | timestamptz | |
+
+**Seed data (8 rows):**
+
+| slug | name | format | size_ml | servings | price_ex_vat |
+|------|------|--------|---------|----------|--------------|
+| allinone_shot | All-in-one | shot | 100 | 1 | £3.50 |
+| allinone_share | All-in-one | share | 1000 | 10 | £25.00 |
+| lemon_ginger_honey_shot | Lemon, Ginger, Honey | shot | 100 | 1 | £3.50 |
+| lemon_ginger_honey_share | Lemon, Ginger, Honey | share | 1000 | 10 | £25.00 |
+| apple_ginger_shot | Apple Ginger | shot | 100 | 1 | £3.50 |
+| apple_ginger_share | Apple Ginger | share | 1000 | 10 | £25.00 |
+| turmeric_shot | Turmeric Boost | shot | 100 | 1 | £3.50 |
+| turmeric_share | Turmeric Boost | share | 1000 | 10 | £25.00 |
+
+**RLS:** Anyone (including anon) can SELECT WHERE available = true. No writes from clients.
+
+---
+
+### 4.3 `public.subscriptions`
+
+Subscription plans created by authenticated users.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| user_id | uuid | not null, FK → auth.users, ON DELETE CASCADE |
+| ingredients | text[] | |
+| frequency | text | 'weekly' \| 'biweekly' \| 'monthly' |
+| team_size | int | default 1 |
+| quantity_tier | text | Multiplier: '0.5' \| '1.0' \| '1.5' \| '2.0' — default '1' |
+| shots_per_drop | int | |
+| bottles_per_drop | int | |
+| shots_per_month | int | |
+| bottles_per_month | int | |
+| price_per_drop_ex_vat | numeric(10,2) | nullable |
+| price_per_month_ex_vat | numeric(10,2) | nullable |
+| vat_per_month | numeric(10,2) | nullable |
+| total_per_month_inc_vat | numeric(10,2) | nullable |
+| status | text | CHECK in ('pending','active','paused','cancelled'), default 'pending' |
+| lead_id | uuid | nullable, FK → public.leads, ON DELETE SET NULL |
+
+**RLS:** authenticated can SELECT WHERE user_id = auth.uid(). Inserts are service-role only.  
+**Grants:** authenticated: SELECT; service role: full (bypasses RLS).
+
+---
+
+### 4.4 `public.addresses`
+
+Billing and delivery addresses for authenticated users.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| user_id | uuid | not null, FK → auth.users, ON DELETE CASCADE |
+| type | text | CHECK in ('billing','delivery') |
+| label | text | nullable — optional nickname e.g. "Main Office" |
+| line1 | text | not null |
+| line2 | text | nullable |
+| city | text | not null |
+| postcode | text | not null |
+| country | text | not null, default 'GB' |
+| is_default | boolean | not null, default false; one default per type per user (enforced app-side) |
+
+**Index:** addresses_user_id_idx on (user_id)  
+**RLS:** authenticated can SELECT/INSERT/UPDATE/DELETE WHERE user_id = auth.uid()  
+**Grants:** authenticated: SELECT, INSERT, UPDATE, DELETE
+
+---
+
+## 5. SQL Navigation Guide
+
+### Browse leads (admin queries)
+
+```sql
+-- All leads, newest first
+SELECT id, created_at::date, email, company, role, ingredients,
+       frequency, team_size, total_per_month_inc_vat, signup_complete
+FROM public.leads
+ORDER BY created_at DESC;
+
+-- Only converted (has account)
+SELECT * FROM public.leads WHERE signup_complete = true ORDER BY created_at DESC;
+
+-- Leads without accounts yet
+SELECT * FROM public.leads WHERE signup_complete = false ORDER BY created_at DESC;
+
+-- Revenue estimate from leads
+SELECT SUM(total_per_month_inc_vat) AS pipeline_mrr FROM public.leads;
+
+-- Leads linked to a specific user
+SELECT l.*, u.email AS auth_email
+FROM public.leads l
+JOIN auth.users u ON l.user_id = u.id
+WHERE u.email = 'someone@company.com';
+```
+
+### Browse subscriptions
+
+```sql
+-- All subscriptions with user email
+SELECT s.id, s.created_at::date, u.email, s.status, s.frequency,
+       s.team_size, s.total_per_month_inc_vat
+FROM public.subscriptions s
+JOIN auth.users u ON s.user_id = u.id
+ORDER BY s.created_at DESC;
+
+-- Active subscriptions only
+SELECT * FROM public.subscriptions WHERE status = 'active';
+
+-- MRR from active subscriptions
+SELECT SUM(total_per_month_inc_vat) AS mrr
+FROM public.subscriptions
+WHERE status = 'active';
+```
+
+### Browse addresses
+
+```sql
+-- All addresses for a user
+SELECT * FROM public.addresses WHERE user_id = '<user-uuid>' ORDER BY type, is_default DESC;
+
+-- Default delivery addresses
+SELECT a.*, u.email
+FROM public.addresses a
+JOIN auth.users u ON a.user_id = u.id
+WHERE a.type = 'delivery' AND a.is_default = true;
+```
+
+### User lookup (auth.users — service role only)
+
+```sql
+-- List all users
+SELECT id, email, created_at, last_sign_in_at, raw_user_meta_data->>'full_name' AS name
+FROM auth.users
+ORDER BY created_at DESC;
+
+-- Find user by email
+SELECT id, email, created_at FROM auth.users WHERE email = 'someone@company.com';
+```
+
+### Product catalogue
+
+```sql
+-- All available products
+SELECT slug, name, format, size_ml, price_ex_vat, price_per_serving_ex_vat
+FROM public.ingredients
+WHERE available = true
+ORDER BY sort_order;
+```
+
+---
+
+## 6. API Routes (complete reference)
+
+All routes live under `app/api/`. Auth is validated server-side via Supabase SSR (cookie session). DB writes use the service role client to bypass RLS.
+
+### Lead routes
+
+#### `POST /api/lead`
+Create a new lead (step 1 of funnel, or full fallback on step 4 if no leadId).
+
+**Request body:**
+```json
+{
+  "email": "hr@company.com",
+  "company": "Acme Inc.",
+  "role": "HR Manager",
+  // Optional — included when isFull (step 4 fallback):
+  "ingredients": ["allinone_shot"],
+  "frequency": "monthly",
+  "quantity_tier": "1.0",
+  "team_size": 50,
+  "shots_per_drop": 50,
+  "bottles_per_drop": 0,
+  "shots_per_month": 50,
+  "bottles_per_month": 0,
+  "price_per_drop_ex_vat": 175.00,
+  "price_per_month_ex_vat": 175.00,
+  "vat_per_month": 35.00,
+  "total_per_month_inc_vat": 210.00
+}
+```
+**Response:** `{ "leadId": "<uuid>" }`  
+**Side effects:** Sends step1 email (partial) or quote email (full) via Resend.
+
+---
+
+#### `PATCH /api/lead/[id]`
+Update lead with full plan (step 4, when leadId exists from step 1).
+
+**Request body:** Same "full" fields as above (no email/company — fetched from DB).  
+**Response:** `{ "ok": true }`  
+**Side effects:** Sends quote email.
+
+---
+
+### Subscription routes
+
+#### `GET /api/subscription`
+Returns all subscriptions for the authenticated user.
+
+**Auth:** Required  
+**Response:** `{ "subscriptions": SubRow[] }`
+
+---
+
+#### `POST /api/subscription`
+Creates a new pending subscription for the authenticated user (called from funnel when logged in).
+
+**Auth:** Required  
+**Request body:** Same plan fields as lead (no email/company), plus optional `lead_id`.  
+**Response:** `{ "subscription": SubRow }`
+
+---
+
+#### `PATCH /api/subscription/[id]`
+Updates a subscription owned by the authenticated user.
+
+**Auth:** Required; ownership verified  
+**Allowed fields:** `status`, `ingredients`, `frequency`, `team_size`, `quantity_tier`, `shots_per_drop`, `bottles_per_drop`, `shots_per_month`, `bottles_per_month`, `price_per_drop_ex_vat`, `price_per_month_ex_vat`, `vat_per_month`, `total_per_month_inc_vat`  
+**Response:** `{ "subscription": SubRow }`
+
+---
+
+### Address routes
+
+#### `GET /api/address?type=delivery|billing`
+Returns saved addresses for the authenticated user.
+
+**Auth:** Required  
+**Query params:** `type` (optional — if omitted, returns all)  
+**Response:** `{ "addresses": AddressRow[] }` — sorted: default first, then by created_at asc
+
+---
+
+#### `POST /api/address`
+Creates a new address.
+
+**Auth:** Required  
+**Request body:**
+```json
+{
+  "type": "delivery",
+  "label": "Main Office",
+  "line1": "22 Tech Street",
+  "line2": "Floor 3",
+  "city": "London",
+  "postcode": "EC1A 1BB",
+  "country": "GB",
+  "is_default": true
+}
+```
+**Behavior:** If `is_default: true`, unsets previous default of the same type.  
+**Response:** `{ "address": AddressRow }`
+
+---
+
+#### `PATCH /api/address/[id]`
+Updates an address (ownership checked).
+
+**Auth:** Required  
+**Allowed fields:** `label`, `line1`, `line2`, `city`, `postcode`, `country`, `is_default`  
+**Response:** `{ "address": AddressRow }`
+
+---
+
+#### `DELETE /api/address/[id]`
+Deletes an address (ownership checked).
+
+**Auth:** Required  
+**Response:** `{ "ok": true }`
+
+---
+
+### Account route
+
+#### `PATCH /api/account`
+Updates the authenticated user's display name (`user_metadata.full_name`).
+
+**Auth:** Required  
+**Request body:** `{ "display_name": "Felix McAuliffe" }`  
+**Response:** `{ "ok": true }`
+
+---
+
+### Auth routes
+
+#### `GET /auth/callback`
+Supabase OAuth callback. Exchanges code for session, auto-links lead by email, redirects to `/dashboard` (or `?next=` param).
+
+#### `GET /auth/signout`
+Signs out the user via Supabase, redirects to `/`.
+
+---
+
+## 7. Authentication architecture
+
+```
+lib/supabase/client.ts   — createClient()             → browser, anon key, no cookies
+lib/supabase/server.ts   — createClient()             → server components/routes, anon key + cookies
+lib/supabase/middleware.ts — updateSession()           → edge, refreshes auth cookies on every request
+lib/supabase/service.ts  — createServiceClient()      → server-only, SERVICE_ROLE key, bypasses RLS
+```
+
+**Pattern in API routes:**
+1. `createClient()` (server) → `supabase.auth.getUser()` — validate session
+2. `createServiceClient()` (service) → perform actual DB operation
+
+**Admin check** (`/admin/page.tsx`):
+```typescript
+function isAdmin(email: string | undefined): boolean {
+  const adminEmails = (process.env.ADMIN_EMAILS ?? "")
+    .split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+  return adminEmails.includes(email?.toLowerCase() ?? "");
+}
+```
+
+**Lead auto-linking** happens in two places:
+1. `/auth/callback` route — after OAuth/email confirmation
+2. `dashboard/layout.tsx` — on every dashboard load as a safety net
+
+---
+
+## 8. Frontend architecture
+
+### Client vs Server components
+
+| Component | Type | Why |
+|-----------|------|-----|
+| `app/layout.tsx` | Server | Static fonts/metadata |
+| `app/page.tsx` | Server (delegates) | Thin wrapper |
+| `app/dashboard/layout.tsx` | **Server** | Auth guard, lead linking, passes user data to children |
+| `app/dashboard/settings/page.tsx` | **Server** | Fetches user metadata to pass as props |
+| `components/landing-page.tsx` | **Client** | Manages funnel open state |
+| `components/funnel-modal.tsx` | **Client** | Multi-step form, API calls |
+| `components/db-sidebar-nav.tsx` | **Client** | Pathname active state, localStorage collapse |
+| `components/db-subscription-page.tsx` | **Client** | Fetches subscriptions, filters, modals |
+| `components/db-settings-page.tsx` | **Client** | Tab state, address CRUD |
+| `components/db-one-off-modal.tsx` | **Client** | Fetches saved addresses, optional save |
+| `app/admin/page.tsx` | **Server** | Auth+admin check, fetches all leads |
+
+### Funnel modal — two paths
+
+**Anonymous user:**
+1. Step 1 → POST /api/lead → get leadId
+2. Steps 2–4 → local state
+3. Step 4 submit → if leadId: PATCH /api/lead/[id]; else: POST /api/lead (full)
+4. Success → "complete account sign up" CTA → /auth/login
+
+**Logged-in user (`loggedIn` prop = true):**
+1. Step 1 is skipped (email/company prefilled, jumps to step 2)
+2. Steps 2–4 → local state
+3. Step 4 submit → POST /api/subscription (creates pending subscription)
+4. Success → "View subscription" CTA → /dashboard/subscriptions
+
+### One-off orders (important caveat)
+
+`DbOneOffPage` / `DbOneOffModal` are **frontend-only**. Orders live in React state only and are lost on refresh. The modal does:
+- Fetch `GET /api/address?type=delivery` to populate address picker
+- Optionally POST to `/api/address` to save a new address
+- **No order is persisted to DB** — this is a UI scaffold for future implementation.
+
+---
+
+## 9. Pricing and product logic
+
+All in `lib/funnel-logic.ts`:
+
+```typescript
+SHOT_PRICE_EX_VAT  = £3.50   // per 100ml shot
+BOTTLE_PRICE_EX_VAT = £25.00  // per 1L share bottle
+VAT_RATE = 0.20 (20%)
+
+MULT_STEPS = [0.5, 1.0, 1.5, 2.0]  // per-person quantity multipliers
+// These are stored as strings in DB (quantity_tier column)
+
+FREQ_DELIVERIES_PER_MONTH = {
+  weekly:   52/12  ≈ 4.33
+  biweekly: 26/12  ≈ 2.17
+  monthly:  1
+}
+
+computePlan(ingredientKeys, multiplier, team, freq) → Plan {
+  shotsPerDrop   = round(team × shotsPerPerson × multiplier)
+  bottlesPerDrop = round(team × bottlesPerPerson × multiplier)
+  shotsMonth     = round(shotsPerDrop × deliveriesPerMonth)
+  bottlesMonth   = round(bottlesPerDrop × deliveriesPerMonth)
+  pricePerDropExVat   = (shots × 3.50) + (bottles × 25.00)
+  pricePerMonthExVat  = pricePerDrop × deliveriesPerMonth
+  vatPerMonth         = pricePerMonthExVat × 0.20
+  totalPerMonthIncVat = pricePerMonthExVat + vatPerMonth
+}
+```
+
+**Ingredient meta** (shots/bottles per person per ingredient):
+- `*_shot` ingredients → 1 shot, 0 bottles per person
+- `*_share` ingredients → 0 shots, 0.1 bottles per person (1 bottle serves 10)
+
+---
+
+## 10. Email templates (`lib/email.ts`)
+
+| Function | Trigger | Content |
+|----------|---------|---------|
+| `sendStep1Email` | POST /api/lead (partial) | "Finish setting up your subscription" — links to /auth/login |
+| `sendQuoteEmail` | POST /api/lead (full) or PATCH /api/lead/[id] | Full pricing table with blend, frequency, team, totals |
+
+From address: `RESEND_FROM_EMAIL` env var (default: `onboarding@resend.dev`)
+
+---
+
+## 11. Environment variables
+
+| Variable | Server/Client | Required | Notes |
+|----------|---------------|----------|-------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Both | Yes | Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Both | Yes | Or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only | Yes | Never expose to browser |
+| `RESEND_API_KEY` | Server only | For email | |
+| `RESEND_FROM_EMAIL` | Server only | For email | Defaults to sandbox address |
+| `NEXT_PUBLIC_APP_URL` | Both | For email CTAs | No trailing slash, e.g. `https://juice.vercel.app` |
+| `ADMIN_EMAILS` | Server only | For /admin | Comma-separated email list |
+
+---
+
+## 12. Dashboard navigation map
+
+```
+/dashboard                    — Home: product bento + quick links
+  /dashboard/orders           — Orders page (UI scaffold, DbOrdersPage)
+  /dashboard/subscriptions    — Subscription list + filters + modals
+  /dashboard/one-off          — One-off orders (frontend-only, no DB persistence)
+  /dashboard/juice-types      — Product catalog
+  /dashboard/reviews          — Placeholder
+  /dashboard/feedback         — Placeholder
+  /dashboard/settings         — Account + Addresses tabs
+    Account tab:  display name + read-only email
+    Addresses tab: CRUD for billing + delivery addresses, set-default
+```
+
+Sidebar collapse state persisted in `localStorage` key `db-sidebar-collapsed`.
+
+---
+
+## 13. Nuances and gotchas
+
+1. **`quantity_tier` is a multiplier string, not a label.** Stored as `"0.5"`, `"1.0"`, `"1.5"`, `"2.0"` — not `"light"`, `"standard"`, `"generous"`. Old CODEBASE_KNOWLEDGE was wrong about this.
+
+2. **One-off orders have no DB.** State is React-only. The addresses fetched and optionally saved are real DB operations, but the order itself is not persisted.
+
+3. **Lead auto-linking runs twice.** Once at `/auth/callback` and once at `dashboard/layout.tsx`. The layout check handles cases where the callback was OAuth-only without the funnel (e.g. user signed up directly).
+
+4. **Admin page is standalone** (not inside dashboard layout). Has its own header. Protected server-side via `isAdmin()` + redirect.
+
+5. **Service role client for every API write.** API routes always: (1) verify user via cookie client, (2) do DB op via service role. This pattern lets us bypass RLS cleanly while still enforcing auth.
+
+6. **`password supabase.txt`** exists in repo root. Contains sensitive credentials — rotate if ever committed to git. Store secrets in `.env.local` only.
+
+7. **One-off modal fetches addresses fresh on every open.** The `useEffect` in `DbOneOffModal` has `[open]` as dependency.
+
+8. **Subscription `status` field** exists for lifecycle management but is set/changed manually. No automated status transitions exist yet.
+
+9. **Ingredient slugs must match** across: `INGREDIENT_OPTIONS` in funnel-modal, `INGREDIENT_META` in funnel-logic, `SLUG_META` in subscription-meta, and the `ingredients` table in Supabase.
+
+10. **Step4 double-click guard.** The funnel modal uses `requestAnimationFrame` + `step4Ready` state to prevent the "Continue" button click from firing the "Submit" button at the same DOM position.
+
+---
+
+## 14. Key TypeScript types
+
+```typescript
+// lib/funnel-logic.ts
+type Frequency = "weekly" | "biweekly" | "monthly" | null;
+type MultStep = 0.5 | 1.0 | 1.5 | 2.0;
+interface Plan { keys, labels, shotsPerDrop, bottlesPerDrop, shotsMonth, bottlesMonth,
+                 team, tier, freq, pricePerDropExVat, pricePerMonthExVat, vatPerMonth, totalPerMonthIncVat }
+
+// lib/subscription-meta.ts
+type SubStatus = "pending" | "active" | "paused" | "cancelled";
+interface SubRow { id, created_at, ingredients, frequency, team_size, quantity_tier,
+                   shots_per_drop, bottles_per_drop, shots_per_month, bottles_per_month,
+                   price_per_drop_ex_vat, price_per_month_ex_vat, vat_per_month,
+                   total_per_month_inc_vat, status }
+
+// lib/address.ts
+interface AddressRow { id, created_at, user_id, type, label, line1, line2, city, postcode, country, is_default }
+
+// components/db-one-off-modal.tsx
+interface OneOffOrder { id, drink, format, qty, deliveryDate, address, notes, status }
+```
+
+---
+
+## 15. What's not built yet (as of 2026-04-15)
+
+| Feature | Status |
+|---------|--------|
+| Payment / Stripe | Not started |
+| Real order fulfilment | Not started |
+| Email for subscriptions | Not started (only lead funnel has email) |
+| DB persistence for one-off orders | Not started (UI scaffold only) |
+| Reviews / Feedback pages | Placeholders only |
+| Orders page content | Scaffold only |
+| Volume discounts | Not started (pricing is linear) |
+| Rate limiting on /api/lead | Not started |
+| CAPTCHA | Not started |
+
+---
+
+## 16. Supabase setup checklist (for new environments)
+
+1. Run `supabase/schema.sql` in SQL Editor (full file — idempotent)
+2. Authentication → URL Configuration → add redirect URLs:
+   - `http://localhost:3000/auth/callback` (dev)
+   - `https://your-domain.com/auth/callback` (prod)
+3. For Google OAuth: Google Cloud Console → Authorized redirect URIs → add `https://<project>.supabase.co/auth/v1/callback`
+4. Copy all env vars from `.env.example` to `.env.local` (or Vercel project settings)
+5. Set `ADMIN_EMAILS` to include your email address
+
+---
+
+*End of CODEBASE_KNOWLEDGE.md v2.0*

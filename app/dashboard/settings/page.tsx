@@ -1,11 +1,14 @@
+import { createClient } from "@/lib/supabase/server";
+import { DbSettingsPage } from "@/components/db-settings-page";
+
 export const metadata = { title: "Settings — Juice for Teams" };
 
-export default function SettingsPage() {
-  return (
-    <div className="db-placeholder">
-      <div className="db-placeholder__icon" aria-hidden="true">⚙️</div>
-      <h1 className="db-placeholder__title">Settings</h1>
-      <p className="db-placeholder__sub">Manage your account and preferences — coming soon.</p>
-    </div>
-  );
+export default async function SettingsPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const initialDisplayName = (user?.user_metadata?.full_name as string | undefined) ?? "";
+  const email = user?.email ?? "";
+
+  return <DbSettingsPage initialDisplayName={initialDisplayName} email={email} />;
 }
