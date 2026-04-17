@@ -88,6 +88,97 @@ export async function POST(req: NextRequest) {
 
   const mode      = body.mode as string;
   const saveDraft = body.saveDraft === true;
+  const existingSubscriptionId = typeof body.existingSubscriptionId === "string" ? body.existingSubscriptionId : null;
+
+  const lineItemsLog = Array.isArray(body.lineItems)
+    ? (body.lineItems as LineItem[]).map(i => `${i.quantity}×${i.productSlug}(${i.format})`).join(", ")
+    : "—";
+  console.log(
+    `[checkout/session] user=${user.email} mode=${mode ?? existingSubscriptionId ? "existingSub" : "?"} ` +
+    `saveDraft=${saveDraft} items=[${lineItemsLog}]` +
+    (body.frequency ? ` freq=${body.frequency}` : "") +
+    (body.deliveryDate ? ` date=${body.deliveryDate}` : "")
+  );
+
+  const service = createServiceClient();
+
+  // ── Handle payment for an existing pending subscription ─────────────────────
+  if (existingSubscriptionId) {
+    const { data: existingSub, error: subFetchErr } = await service
+      .from("subscriptions")
+      .select("id, user_id, status, total_per_month_inc_vat, price_per_month_ex_vat, vat_per_month, line_items, product_slug, format, frequency, stripe_customer_id")
+      .eq("id", existingSubscriptionId)
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (subFetchErr || !existingSub) {
+      return NextResponse.json({ error: "Subscription not found or not in pending state" }, { status: 404 });
+    }
+
+    // Get or reuse Stripe customer
+    let stripeCustomerId = (existingSub.stripe_customer_id as string | null);
+    if (!stripeCustomerId) {
+      try {
+        const { data: otherSub } = await service
+          .from("subscriptions")
+          .select("stripe_customer_id")
+          .eq("user_id", user.id)
+          .not("stripe_customer_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (otherSub?.stripe_customer_id) stripeCustomerId = otherSub.stripe_customer_id as string;
+      } catch { /* ignore */ }
+    }
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { supabase_user_id: user.id },
+      });
+      stripeCustomerId = customer.id;
+    }
+
+    const subLineItems = (existingSub.line_items ?? []) as LineItem[];
+    const subFrequency = existingSub.frequency as Frequency;
+    const subPricing = subLineItems.length > 0
+      ? sumSubPrice(subLineItems, subFrequency)
+      : { totalPerMonthIncVat: (existingSub.total_per_month_inc_vat as number) ?? 0 };
+    const subDescription = subLineItems.length > 0
+      ? subLineItems.map((i: LineItem) => `${i.quantity} × ${i.productSlug.replace(/_/g, " ")} ${i.format}`).join(", ")
+      : ((existingSub.product_slug as string) ?? "Juice subscription");
+    const subFreqLabel = FREQ_LABEL[subFrequency] ?? subFrequency ?? "";
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      mode: "subscription",
+      ui_mode: "embedded_page",
+      line_items: [{
+        price_data: {
+          currency: "gbp",
+          product_data: {
+            name: "Juice for Teams — Monthly Subscription",
+            description: `${subDescription}${subFreqLabel ? ` — ${subFreqLabel}` : ""}`,
+          },
+          recurring: { interval: "month" },
+          unit_amount: toPence(subPricing.totalPerMonthIncVat),
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        supabase_subscription_id: existingSub.id as string,
+        supabase_user_id: user.id,
+      },
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
+    });
+
+    await service
+      .from("subscriptions")
+      .update({ stripe_checkout_session_id: session.id, stripe_customer_id: stripeCustomerId })
+      .eq("id", existingSub.id as string);
+
+    return NextResponse.json({ clientSecret: session.client_secret });
+  }
 
   if (mode !== "subscription" && mode !== "one_off") {
     return NextResponse.json({ error: "mode must be 'subscription' or 'one_off'" }, { status: 400 });
@@ -97,8 +188,6 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(lineItems) || lineItems.length === 0) {
     return NextResponse.json({ error: "lineItems is required" }, { status: 400 });
   }
-
-  const service = createServiceClient();
 
   // ── 1. Resolve delivery address ──────────────────────────────────────────────
   let resolvedAddressId: string | null = null;
@@ -197,7 +286,7 @@ export async function POST(req: NextRequest) {
       bottles_per_drop:         lineItems.filter(i => i.format === "share").reduce((s, i) => s + i.quantity, 0),
       shots_per_month:          0,
       bottles_per_month:        0,
-      status:                   "checkout_draft",
+      status:                   saveDraft ? "pending" : "checkout_draft",
       ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
     };
 
@@ -290,6 +379,7 @@ export async function POST(req: NextRequest) {
       .update({ stripe_checkout_session_id: session.id })
       .eq("id", finalSub!.id);
 
+    console.log(`[checkout/session] ✓ subscription session created sub=${finalSub!.id} stripe=${session.id} total=£${pricing.totalPerMonthIncVat}/mo`);
     return NextResponse.json({ clientSecret: session.client_secret });
   }
 
@@ -379,5 +469,7 @@ export async function POST(req: NextRequest) {
     .update({ stripe_payment_intent_id: session.payment_intent as string })
     .eq("id", finalOrder!.id);
 
+  const oneOffTotal = sumOneOffPrice(lineItems).totalIncVat;
+  console.log(`[checkout/session] ✓ one-off session created order=${finalOrder!.id} stripe=${session.id} total=£${oneOffTotal} date=${deliveryDate}`);
   return NextResponse.json({ clientSecret: session.client_secret });
 }

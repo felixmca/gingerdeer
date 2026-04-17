@@ -60,6 +60,44 @@ export async function POST(req: NextRequest) {
             })
             .eq("id", dbSubId);
 
+          // Create an orders record for this payment
+          const { data: subData } = await service
+            .from("subscriptions")
+            .select("user_id, product_slug, format, line_items, delivery_address_id, total_per_month_inc_vat, price_per_month_ex_vat, vat_per_month")
+            .eq("id", dbSubId)
+            .maybeSingle();
+
+          const userId     = sess.metadata?.supabase_user_id ?? subData?.user_id;
+          const totalPence = sess.amount_total ?? 0;
+          const totalGBP   = totalPence > 0 ? totalPence / 100 : ((subData?.total_per_month_inc_vat as number | null) ?? 0);
+
+          const orderRecord: Record<string, unknown> = {
+            user_id:                    userId,
+            status:                     "paid",
+            total_inc_vat:              totalGBP,
+            stripe_checkout_session_id: sess.id,
+            items:                      [],
+          };
+          if (subData?.product_slug)       orderRecord.product_slug    = subData.product_slug;
+          if (subData?.format)             orderRecord.format           = subData.format;
+          if (subData?.line_items)         orderRecord.line_items       = subData.line_items;
+          if (subData?.delivery_address_id) orderRecord.delivery_address_id = subData.delivery_address_id;
+          if (subData?.price_per_month_ex_vat) orderRecord.subtotal_ex_vat = subData.price_per_month_ex_vat;
+          if (subData?.vat_per_month)      orderRecord.vat              = subData.vat_per_month;
+
+          const { error: orderErr } = await service.from("orders").insert(orderRecord);
+          if (orderErr) {
+            console.error("[stripe webhook] subscription order insert error:", orderErr.message);
+            // Retry with minimal columns
+            await service.from("orders").insert({
+              user_id:                    userId,
+              status:                     "paid",
+              total_inc_vat:              totalGBP,
+              stripe_checkout_session_id: sess.id,
+              items:                      [],
+            });
+          }
+
         } else if (sess.mode === "payment") {
           // One-off order — find by session ID and mark paid
           const dbOrderId = sess.metadata?.supabase_order_id;

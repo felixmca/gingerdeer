@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: Params) {
   // Verify ownership before updating
   const { data: existing, error: fetchErr } = await service
     .from("subscriptions")
-    .select("id, user_id")
+    .select("id, user_id, status")
     .eq("id", id)
     .single();
 
@@ -60,6 +60,11 @@ export async function PATCH(request: Request, { params }: Params) {
   }
   if (existing.user_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Block direct activation of unpaid subscriptions — must go through Stripe checkout
+  if (patch.status === "active" && (existing.status === "pending" || existing.status === "checkout_draft")) {
+    return NextResponse.json({ error: "Payment required to activate this subscription." }, { status: 403 });
   }
 
   const { data: updated, error: updateErr } = await service

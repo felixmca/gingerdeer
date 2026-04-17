@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { OrderLauncher, EmbeddedCheckoutPanel } from "@/components/order-launcher";
 import { createClient } from "@/lib/supabase/client";
 
+const DEV = process.env.NODE_ENV === "development";
+function devLog(...args: unknown[]) {
+  if (DEV) console.log("[checkout/page]", ...args);
+}
+
 export default function CheckoutPage() {
   const [ready, setReady]               = useState(false);
   const [loggedIn, setLoggedIn]         = useState(false);
@@ -17,16 +22,23 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     async function init() {
+      devLog("init — checking auth + sessionStorage");
+
       // 1. Check auth
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const authed = !!session;
       setLoggedIn(authed);
       setUserEmail(session?.user?.email ?? "");
+      devLog("auth:", authed ? `logged in as ${session?.user?.email}` : "not logged in");
 
-      // 2. Direct payment: client secret in sessionStorage (set by OrderLauncher)
+      // 2. Direct payment: client secret in sessionStorage (set by OrderLauncher
+      //    when navigating from a different page like /dashboard/juice-types).
+      //    When the OrderLauncher lives on THIS page it uses the onClientSecret
+      //    prop instead, so this path is only hit on cross-page navigation.
       const secret = sessionStorage.getItem("ol_client_secret");
       if (secret) {
+        devLog("found ol_client_secret in sessionStorage — showing Stripe embed");
         sessionStorage.removeItem("ol_client_secret");
         sessionStorage.removeItem("ol_order_type");
         setClientSecret(secret);
@@ -37,22 +49,21 @@ export default function CheckoutPage() {
       // 3. Post-auth redirect: pending plan in localStorage
       const raw = localStorage.getItem("ol_pending_plan");
       if (raw) {
+        devLog("found ol_pending_plan in localStorage — restoring pre-auth state");
         try {
           const plan = JSON.parse(raw) as {
             orderType?: string;
-            // New format
             lineItems?: Array<{ productSlug?: string }>;
-            // Legacy format
             productSlug?: string;
           };
           localStorage.removeItem("ol_pending_plan");
           setPreType(plan.orderType as "subscription" | "one_off" | undefined);
-          // Try new lineItems format first, then legacy productSlug
           const slug = plan.lineItems?.[0]?.productSlug ?? plan.productSlug;
           setPreSlug(slug);
         } catch { /* ignore */ }
       }
 
+      devLog("opening launcher");
       setLauncherOpen(true);
       setReady(true);
     }
@@ -103,6 +114,11 @@ export default function CheckoutPage() {
         preselectedProductSlug={preSlug}
         loggedIn={loggedIn}
         userEmail={userEmail}
+        onClientSecret={(secret) => {
+          devLog("onClientSecret callback — rendering Stripe embed directly");
+          setLauncherOpen(false);
+          setClientSecret(secret);
+        }}
       />
     </div>
   );

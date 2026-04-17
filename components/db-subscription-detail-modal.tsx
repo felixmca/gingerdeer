@@ -10,6 +10,7 @@ import {
   type SubStatus,
 } from "@/lib/subscription-meta";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type ModalMode = "view" | "cancelling" | "done";
 
@@ -25,6 +26,7 @@ function fmtGBP(n: number | null | undefined) {
 }
 
 export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
+  const router = useRouter();
   const [mode, setMode]       = useState<ModalMode>("view");
   const [pending, setPending] = useState(false);
   const [error, setError]     = useState("");
@@ -72,19 +74,39 @@ export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
     setPending(false);
   }
 
+  async function activateViaCheckout() {
+    setPending(true);
+    setError("");
+    try {
+      const res  = await fetch("/api/checkout/session", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ existingSubscriptionId: sub!.id }),
+      });
+      const json = await res.json() as { clientSecret?: string; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to start checkout.");
+      sessionStorage.setItem("ol_client_secret", json.clientSecret!);
+      sessionStorage.setItem("ol_order_type", "subscription");
+      router.push("/dashboard/checkout");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setPending(false);
+    }
+  }
+
   // ── Status action config ─────────────────────────────────────────────────────
-  type Action = { label: string; targetStatus: SubStatus; primary: boolean };
+  type Action = { label: string; targetStatus?: SubStatus; primary: boolean; onClick?: () => void };
 
   const ACTIONS: Record<SubStatus, Action[]> = {
     checkout_draft: [],
     pending: [
-      { label: "Confirm subscription",  targetStatus: "active",    primary: true  },
+      { label: "Pay & activate", primary: true, onClick: activateViaCheckout },
     ],
     active: [
-      { label: "Pause subscription",    targetStatus: "paused",    primary: false },
+      { label: "Pause subscription", targetStatus: "paused", primary: false },
     ],
     paused: [
-      { label: "Resume subscription",   targetStatus: "active",    primary: true  },
+      { label: "Resume subscription", targetStatus: "active", primary: true },
     ],
     cancelled: [],
   };
@@ -206,13 +228,13 @@ export function DbSubscriptionDetailModal({ sub, onClose, onUpdate }: Props) {
               <div className="sub-detail__actions">
                 {actions.map((a) => (
                   <button
-                    key={a.targetStatus}
+                    key={a.label}
                     type="button"
                     className={a.primary ? "btn btn--primary" : "btn btn--ghost"}
                     disabled={pending}
-                    onClick={() => patch({ status: a.targetStatus })}
+                    onClick={() => a.onClick ? a.onClick() : a.targetStatus && patch({ status: a.targetStatus })}
                   >
-                    {pending ? "Saving…" : a.label}
+                    {pending ? "Please wait…" : a.label}
                     {a.primary && !pending && " →"}
                   </button>
                 ))}

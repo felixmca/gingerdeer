@@ -152,6 +152,13 @@ export interface OrderLauncherProps {
   loggedIn: boolean;
   userEmail?: string;
   userCompany?: string;
+  /**
+   * When provided (e.g. from the /dashboard/checkout page), called with the
+   * Stripe clientSecret instead of writing to sessionStorage and pushing to
+   * /dashboard/checkout. This avoids the same-URL no-op navigation bug where
+   * router.push() on the current route does not remount the component.
+   */
+  onClientSecret?: (secret: string) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -164,6 +171,7 @@ export function OrderLauncher({
   loggedIn,
   userEmail = "",
   userCompany = "",
+  onClientSecret,
 }: OrderLauncherProps) {
   const router = useRouter();
 
@@ -527,10 +535,22 @@ export function OrderLauncher({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to start checkout.");
-      sessionStorage.setItem("ol_client_secret", json.clientSecret);
-      sessionStorage.setItem("ol_order_type", orderType!);
-      handleClose();
-      router.push("/dashboard/checkout");
+
+      if (onClientSecret) {
+        // Already on the checkout page — hand the secret back directly so the
+        // page can render the Stripe embed without any navigation. Using
+        // router.push("/dashboard/checkout") here would be a same-URL no-op
+        // and the page's useEffect would never re-run to read sessionStorage.
+        handleClose();
+        onClientSecret(json.clientSecret);
+      } else {
+        // Coming from another page (e.g. /dashboard/juice-types) — store in
+        // sessionStorage and navigate; the checkout page will pick it up on mount.
+        sessionStorage.setItem("ol_client_secret", json.clientSecret);
+        sessionStorage.setItem("ol_order_type", orderType!);
+        handleClose();
+        router.push("/dashboard/checkout");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
