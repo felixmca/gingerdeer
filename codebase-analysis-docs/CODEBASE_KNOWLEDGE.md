@@ -1,8 +1,8 @@
 # Juice for Teams — Codebase Knowledge (Master Document)
 
-**INDEX_VERSION:** 2.0  
+**INDEX_VERSION:** 2.1  
 **Repo:** `juice-for-teams` (package name) — workspace folder named "Juice"; code is TypeScript/Next.js.  
-**Last fully analyzed:** 2026-04-15  
+**Last fully analyzed:** 2026-04-17  
 **Root path:** `/mnt/c/Users/felix/Desktop/Python Projects/Juice`
 
 > This document is written so any LLM or engineer with no repo access can understand the full system. All paths are relative to the repo root.
@@ -677,19 +677,20 @@ interface OneOffOrder { id, drink, format, qty, deliveryDate, address, notes, st
 
 ---
 
-## 15. What's not built yet (as of 2026-04-15)
+## 15. What's not built yet (as of 2026-04-17)
 
 | Feature | Status |
 |---------|--------|
-| Payment / Stripe | Not started |
-| Real order fulfilment | Not started |
-| Email for subscriptions | Not started (only lead funnel has email) |
-| DB persistence for one-off orders | Not started (UI scaffold only) |
+| ~~Payment / Stripe~~ | **Built** — Stripe embedded checkout, `orders` table, Dahlia API |
+| Real order fulfilment | Scaffold — orders exist in DB but no delivery workflow |
+| ~~Email for subscriptions~~ | **Built** — confirmation email on sub creation |
+| DB persistence for one-off orders | **Built** — `orders` table, Stripe one-off sessions |
 | Reviews / Feedback pages | Placeholders only |
-| Orders page content | Scaffold only |
 | Volume discounts | Not started (pricing is linear) |
 | Rate limiting on /api/lead | Not started |
 | CAPTCHA | Not started |
+| Open-tracking pixel for campaigns | Planned — see MARKETING_ENGINE_PROGRESS.md |
+| Scheduled / time-delayed campaign sends | Planned |
 
 ---
 
@@ -705,4 +706,107 @@ interface OneOffOrder { id, drink, format, qty, deliveryDate, address, notes, st
 
 ---
 
-*End of CODEBASE_KNOWLEDGE.md v2.0*
+---
+
+## 17. CRM — Admin dashboard (added 2026-04-17)
+
+The admin lives at `/admin` (separate layout from `/dashboard`). All admin routes require the user's email to be in `ADMIN_EMAILS` env var.
+
+### Admin pages
+
+| Path | Component | Purpose |
+|------|-----------|---------|
+| `/admin` | server page | Lead count overview |
+| `/admin/leads` | `CrmLeadsTable` | All funnel leads, notes, status |
+| `/admin/contacts` | `CrmContactsTable` | Auth users / contacts |
+| `/admin/accounts` | `CrmAccountsTable` | Company-level accounts |
+| `/admin/opportunities` | `CrmOpportunities` | Pipeline opportunities |
+| `/admin/emails` | `CrmEmailLog` | Email send log + campaign automations |
+| `/admin/prospects` | `CrmProspectsPage` | Marketing prospect database |
+| `/admin/campaigns` | `CrmCampaignsPage` | Email campaign management |
+| `/admin/reports` | `CrmReports` | Aggregated stats |
+| `/admin/billing` | `CrmBilling` | Stripe billing dashboard |
+| `/admin/schema` | `SchemaViewer` | Live DB schema inspector |
+| `/admin/query` | `AiQuery` | AI-powered SQL query runner |
+
+### Admin API routes
+
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/admin/leads` | GET | List all leads |
+| `/api/admin/leads/[id]` | GET, PATCH | Lead detail + notes |
+| `/api/admin/contacts` | GET | List auth users |
+| `/api/admin/contacts/[id]` | GET, PATCH | Contact detail |
+| `/api/admin/accounts` | GET | List company accounts |
+| `/api/admin/opportunities` | GET | List opportunities |
+| `/api/admin/opportunities/[id]` | GET, PATCH | Opportunity detail |
+| `/api/admin/emails` | GET | Email send logs |
+| `/api/admin/emails/campaigns` | GET, POST | Legacy leads-only campaigns |
+| `/api/admin/emails/campaigns/[id]` | GET, PATCH, DELETE | Legacy campaign detail |
+| `/api/admin/emails/automations` | GET, PATCH | Email automation rules |
+| `/api/admin/billing` | GET | Stripe billing data |
+| `/api/admin/reports` | GET | Aggregated pipeline/MRR stats |
+| `/api/admin/query` | POST | Freeform SQL via AI |
+
+---
+
+## 18. Marketing engine (added 2026-04-17)
+
+Full spec in `codebase-analysis-docs/MARKETING_ENGINE_PROGRESS.md`.
+
+### New DB tables (run `scripts/migrate-prospects.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `public.prospect_contacts` | Admin-sourced marketing contacts (distinct from user-facing `leads`) |
+| `public.campaign_sends` | One row per contact per campaign; holds UUID `tracking_token` |
+| `public.campaign_events` | Click / unsubscribe events recorded via tracking URLs |
+
+`email_campaigns` extended with: `campaign_type`, `category_filter[]`, `lifecycle_filter[]`, `sub_category_filter[]`, CTA fields, `preview_text`, `utm_campaign`, aggregate counters.
+
+### Lifecycle model
+
+```
+contact → [CTA click] → opportunity → [basket/pending sub] → lead → [paid] → customer
+```
+
+Tracked via `lifecycle_stage` column on `prospect_contacts`.
+
+### Audience categories (`lib/prospects.ts`)
+
+`mum` · `dad` · `flame` · `candice` · `grandad` — stored as free text (extensible).
+
+### New API routes
+
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/admin/prospects` | GET, POST | List/create prospect contacts |
+| `/api/admin/prospects/[id]` | GET, PATCH, DELETE | Contact detail |
+| `/api/admin/prospects/import` | POST | CSV bulk import (max 2000 rows) |
+| `/api/admin/prospects/extract` | POST | Claude-powered extraction from raw text |
+| `/api/admin/campaigns` | GET, POST | Prospect campaigns |
+| `/api/admin/campaigns/[id]` | GET, PATCH, DELETE | Campaign detail |
+| `/api/admin/campaigns/[id]/preview` | GET | Dry-run recipient count |
+| `/api/admin/campaigns/[id]/send` | POST | Execute send + inject tracking URLs |
+| `/api/track/click/[token]` | GET | CTA click tracking + lifecycle → opportunity + redirect |
+| `/api/track/unsubscribe/[token]` | GET | One-click unsubscribe → status = 'unsubscribed' |
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `lib/prospects.ts` | Types, CATEGORIES, LIFECYCLE_STAGES, helpers |
+| `scripts/migrate-prospects.sql` | Full DB migration for prospect tables |
+| `components/admin/crm-prospects.tsx` | Prospects table + add/import/AI-extract UI |
+| `components/admin/crm-campaigns.tsx` | Campaign list + composer + send modal |
+| `components/admin/admin-sidebar.tsx` | Sidebar — includes new Marketing section |
+
+### Environment variables added
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Required for AI contact extraction endpoint |
+
+---
+
+*End of CODEBASE_KNOWLEDGE.md v2.1*

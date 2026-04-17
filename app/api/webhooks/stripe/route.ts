@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/service";
+import { createLogger } from "@/lib/logger";
 import type Stripe from "stripe";
+
+const log = createLogger("webhooks/stripe");
 
 /**
  * POST /api/webhooks/stripe
@@ -28,9 +31,11 @@ export async function POST(req: NextRequest) {
   try {
     event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (err) {
-    console.error("[stripe webhook] signature verification failed:", err);
+    log.error("signature verification failed", { message: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+
+  log.input("POST /api/webhooks/stripe", { event_type: event.type, event_id: event.id });
 
   const service = createServiceClient();
 
@@ -39,18 +44,21 @@ export async function POST(req: NextRequest) {
       // ── Checkout completed → subscription or one-off payment ─────────────
       case "checkout.session.completed": {
         const sess = event.data.object as Stripe.Checkout.Session;
+        log.info("checkout.session.completed", { mode: sess.mode, session_id: sess.id, amount_total: sess.amount_total });
 
         if (sess.mode === "subscription") {
           const dbSubId = sess.metadata?.supabase_subscription_id;
           if (!dbSubId) {
-            console.warn("[stripe webhook] checkout.session.completed missing supabase_subscription_id");
+            log.warn("missing supabase_subscription_id in session metadata", { session_id: sess.id });
             break;
           }
 
           // Retrieve the subscription Stripe just created so we have the period end
+          log.info("retrieving Stripe subscription", { stripe_subscription: sess.subscription });
           const stripeSub = await stripe.subscriptions.retrieve(sess.subscription as string);
           const periodEnd = stripeSub.items.data[0]?.current_period_end;
 
+          log.db("UPDATE subscriptions → active", { id: dbSubId, stripe_subscription_id: stripeSub.id });
           await service
             .from("subscriptions")
             .update({
@@ -59,8 +67,10 @@ export async function POST(req: NextRequest) {
               ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
             })
             .eq("id", dbSubId);
+          log.dbResult("subscription activated", { id: dbSubId });
 
           // Create an orders record for this payment
+          log.db("SELECT subscriptions for order record", { id: dbSubId });
           const { data: subData } = await service
             .from("subscriptions")
             .select("user_id, product_slug, format, line_items, delivery_address_id, total_per_month_inc_vat, price_per_month_ex_vat, vat_per_month")
@@ -70,6 +80,8 @@ export async function POST(req: NextRequest) {
           const userId     = sess.metadata?.supabase_user_id ?? subData?.user_id;
           const totalPence = sess.amount_total ?? 0;
           const totalGBP   = totalPence > 0 ? totalPence / 100 : ((subData?.total_per_month_inc_vat as number | null) ?? 0);
+
+          log.transform("building order record from subscription", { user_id: userId, total_gbp: totalGBP, has_line_items: !!(subData?.line_items) });
 
           const orderRecord: Record<string, unknown> = {
             user_id:                    userId,
@@ -85,9 +97,10 @@ export async function POST(req: NextRequest) {
           if (subData?.price_per_month_ex_vat) orderRecord.subtotal_ex_vat = subData.price_per_month_ex_vat;
           if (subData?.vat_per_month)      orderRecord.vat              = subData.vat_per_month;
 
+          log.db("INSERT orders (subscription payment)", { user_id: userId, total_inc_vat: totalGBP });
           const { error: orderErr } = await service.from("orders").insert(orderRecord);
           if (orderErr) {
-            console.error("[stripe webhook] subscription order insert error:", orderErr.message);
+            log.error("INSERT orders failed — retrying with minimal columns", { message: orderErr.message });
             // Retry with minimal columns
             await service.from("orders").insert({
               user_id:                    userId,
@@ -96,16 +109,42 @@ export async function POST(req: NextRequest) {
               stripe_checkout_session_id: sess.id,
               items:                      [],
             });
+          } else {
+            log.dbResult("order record created", { user_id: userId, total_inc_vat: totalGBP });
+          }
+
+          // Advance prospect lifecycle: lead → customer
+          if (userId) {
+            try {
+              log.db("auth.admin.getUserById — prospect lifecycle lookup", { user_id: userId });
+              const { data: authUserData } = await service.auth.admin.getUserById(userId as string);
+              const prospectEmail = authUserData?.user?.email;
+              if (prospectEmail) {
+                const emailKey = prospectEmail.toLowerCase().trim();
+                log.db("UPDATE prospect_contacts lifecycle → customer", { email_hash: emailKey, condition: "IN (contact, opportunity, lead)" });
+                await service
+                  .from("prospect_contacts")
+                  .update({ lifecycle_stage: "customer", lifecycle_updated_at: new Date().toISOString() })
+                  .eq("email_hash", emailKey)
+                  .in("lifecycle_stage", ["contact", "opportunity", "lead"]);
+                log.dbResult("prospect lifecycle → customer (best-effort)", { email: prospectEmail });
+              }
+            } catch (lcErr) {
+              // Non-blocking — don't fail the webhook over lifecycle advancement
+              log.warn("prospect lifecycle advancement failed (non-fatal)", { message: lcErr instanceof Error ? lcErr.message : String(lcErr) });
+            }
           }
 
         } else if (sess.mode === "payment") {
           // One-off order — find by session ID and mark paid
           const dbOrderId = sess.metadata?.supabase_order_id;
           if (dbOrderId) {
+            log.db("UPDATE orders → paid (one-off)", { id: dbOrderId });
             await service
               .from("orders")
               .update({ status: "paid", stripe_checkout_session_id: sess.id })
               .eq("id", dbOrderId);
+            log.dbResult("one-off order marked paid", { id: dbOrderId });
           }
         }
 
@@ -123,7 +162,10 @@ export async function POST(req: NextRequest) {
         else if (stripeStatus === "canceled")                              ourStatus = "cancelled";
         else                                                               ourStatus = "pending";
 
+        log.info("customer.subscription.updated", { stripe_subscription: stripeSub.id, stripe_status: stripeStatus, our_status: ourStatus });
+
         const periodEnd = stripeSub.items.data[0]?.current_period_end;
+        log.db("UPDATE subscriptions status", { stripe_subscription_id: stripeSub.id, status: ourStatus });
         await service
           .from("subscriptions")
           .update({
@@ -131,16 +173,20 @@ export async function POST(req: NextRequest) {
             ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
           })
           .eq("stripe_subscription_id", stripeSub.id);
+        log.dbResult("subscription status synced", { stripe_subscription_id: stripeSub.id, status: ourStatus });
         break;
       }
 
       // ── Subscription cancelled ──────────────────────────────────────────────
       case "customer.subscription.deleted": {
         const stripeSub = event.data.object as Stripe.Subscription;
+        log.info("customer.subscription.deleted", { stripe_subscription: stripeSub.id });
+        log.db("UPDATE subscriptions → cancelled", { stripe_subscription_id: stripeSub.id });
         await service
           .from("subscriptions")
           .update({ status: "cancelled" })
           .eq("stripe_subscription_id", stripeSub.id);
+        log.dbResult("subscription cancelled", { stripe_subscription_id: stripeSub.id });
         break;
       }
 
@@ -150,11 +196,14 @@ export async function POST(req: NextRequest) {
         // In the Stripe Dahlia API, subscription is nested in parent.subscription_details
         const subId = (invoice.parent as { subscription_details?: { subscription?: string } } | null)
           ?.subscription_details?.subscription;
+        log.info("invoice.payment_failed", { stripe_subscription: subId ?? "(no sub)" });
         if (subId) {
+          log.db("UPDATE subscriptions → paused", { stripe_subscription_id: subId });
           await service
             .from("subscriptions")
             .update({ status: "paused" })
             .eq("stripe_subscription_id", subId);
+          log.dbResult("subscription paused", { stripe_subscription_id: subId });
         }
         break;
       }
@@ -164,23 +213,28 @@ export async function POST(req: NextRequest) {
         const invoice = event.data.object as Stripe.Invoice;
         const subId = (invoice.parent as { subscription_details?: { subscription?: string } } | null)
           ?.subscription_details?.subscription;
+        log.info("invoice.payment_succeeded", { stripe_subscription: subId ?? "(no sub)" });
         if (subId) {
+          log.db("UPDATE subscriptions → active", { stripe_subscription_id: subId });
           await service
             .from("subscriptions")
             .update({ status: "active" })
             .eq("stripe_subscription_id", subId);
+          log.dbResult("subscription reactivated", { stripe_subscription_id: subId });
         }
         break;
       }
 
       default:
         // Unhandled event type — safe to ignore
+        log.info(`unhandled event type — ignoring`, { event_type: event.type });
         break;
     }
   } catch (err) {
-    console.error(`[stripe webhook] error handling ${event.type}:`, err);
+    log.error(`handler error for ${event.type}`, { message: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Handler error" }, { status: 500 });
   }
 
+  log.done("webhook processed", { event_type: event.type, event_id: event.id });
   return NextResponse.json({ received: true });
 }

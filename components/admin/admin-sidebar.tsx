@@ -82,6 +82,28 @@ export function AdminSidebar() {
           <span>Opportunities</span>
         </a>
 
+        {/* Marketing section */}
+        <span className="adm-nav__section">Marketing</span>
+
+        <a href="/admin/prospects" className={cls("/admin/prospects")} title="Prospects">
+          {/* Target / crosshair */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="7.5" cy="7.5" r="5.5" />
+            <circle cx="7.5" cy="7.5" r="2.5" />
+            <path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2" />
+          </svg>
+          <span>Prospects</span>
+        </a>
+
+        <a href="/admin/campaigns" className={cls("/admin/campaigns")} title="Campaigns">
+          {/* Megaphone */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2 5.5v4h2l5 3V2.5L4 5.5H2Z" />
+            <path d="M12 5a3 3 0 010 5" />
+          </svg>
+          <span>Campaigns</span>
+        </a>
+
         {/* Comms section */}
         <span className="adm-nav__section">Comms</span>
 

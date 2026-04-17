@@ -106,7 +106,7 @@
         "key": "campaign_id",
         "value": "",
         "type": "string",
-        "description": "UUID of a real email_campaigns row"
+        "description": "UUID of a real email_campaigns row (legacy leads campaign)"
       },
       {
         "key": "automation_id",
@@ -119,6 +119,24 @@
         "value": "",
         "type": "string",
         "description": "Generic UUID used by Supabase Direct single-row GETs"
+      },
+      {
+        "key": "prospect_id",
+        "value": "",
+        "type": "string",
+        "description": "UUID of a real prospect_contacts row"
+      },
+      {
+        "key": "prospect_campaign_id",
+        "value": "",
+        "type": "string",
+        "description": "UUID of a prospect email_campaigns row (campaign_type=prospect_only|mixed)"
+      },
+      {
+        "key": "tracking_token",
+        "value": "",
+        "type": "string",
+        "description": "tracking_token UUID from a campaign_sends row (paste from Supabase Direct → campaign_sends)"
       }
     ],
     "item": [
@@ -1481,6 +1499,938 @@
             ]
           },
           {
+            "name": "prospect_contacts",
+            "description": "public.prospect_contacts — marketing prospects database",
+            "item": [
+              {
+                "name": "All prospects",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Active prospects",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100&status=eq.active",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "status",
+                        "value": "eq.active",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Prospects by category (dad)",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100&category=eq.dad",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "category",
+                        "value": "eq.dad",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Opportunities (clicked CTA)",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100&lifecycle_stage=eq.opportunity",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "lifecycle_stage",
+                        "value": "eq.opportunity",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Leads (started checkout)",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100&lifecycle_stage=eq.lead",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "lifecycle_stage",
+                        "value": "eq.lead",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Customers (paid)",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?select=*&order=created_at.desc&limit=100&lifecycle_stage=eq.customer",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "lifecycle_stage",
+                        "value": "eq.customer",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Get prospect by id",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Accept",
+                      "value": "application/vnd.pgrst.object+json"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/prospect_contacts?id=eq.{{record_id}}&select=*",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "prospect_contacts"
+                    ],
+                    "query": [
+                      {
+                        "key": "id",
+                        "value": "eq.{{record_id}}",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "campaign_sends",
+            "description": "public.campaign_sends — per-recipient send records with tracking tokens",
+            "item": [
+              {
+                "name": "All sends",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_sends?select=*&order=created_at.desc&limit=100",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_sends"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Sent",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_sends?select=*&order=created_at.desc&limit=100&status=eq.sent",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_sends"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "status",
+                        "value": "eq.sent",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Clicked",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_sends?select=*&order=created_at.desc&limit=100&status=eq.clicked",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_sends"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "status",
+                        "value": "eq.clicked",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Unsubscribed",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_sends?select=*&order=created_at.desc&limit=100&status=eq.unsubscribed",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_sends"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "status",
+                        "value": "eq.unsubscribed",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Failed",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_sends?select=*&order=created_at.desc&limit=100&status=eq.failed",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_sends"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "status",
+                        "value": "eq.failed",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "campaign_events",
+            "description": "public.campaign_events — tracked interactions (clicks, unsubscribes, lifecycle changes)",
+            "item": [
+              {
+                "name": "All events",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_events?select=*&order=created_at.desc&limit=100",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_events"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Primary CTA clicks",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_events?select=*&order=created_at.desc&limit=100&event_type=eq.click_cta_primary",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_events"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "event_type",
+                        "value": "eq.click_cta_primary",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Secondary CTA clicks",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_events?select=*&order=created_at.desc&limit=100&event_type=eq.click_cta_secondary",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_events"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "event_type",
+                        "value": "eq.click_cta_secondary",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Unsubscribes",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "apikey",
+                      "value": "{{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Authorization",
+                      "value": "Bearer {{supabase_service_role_key}}"
+                    },
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Prefer",
+                      "value": "count=exact"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{supabase_url}}/rest/v1/campaign_events?select=*&order=created_at.desc&limit=100&event_type=eq.unsubscribe",
+                    "host": [
+                      "{{supabase_url}}/rest/v1"
+                    ],
+                    "path": [
+                      "campaign_events"
+                    ],
+                    "query": [
+                      {
+                        "key": "select",
+                        "value": "*",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "order",
+                        "value": "created_at.desc",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "event_type",
+                        "value": "eq.unsubscribe",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
             "name": "SQL RPC",
             "description": "Direct SQL execution via the admin_exec_query function",
             "item": [
@@ -1629,6 +2579,72 @@
                     "language": "json"
                   }
                 }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "📩 Tracking",
+        "description": "Email click tracking and unsubscribe handlers. Open endpoints — the UUID tracking_token in the URL acts as the credential.",
+        "item": [
+          {
+            "name": "GET /api/track/click/:token?slot=primary",
+            "request": {
+              "method": "GET",
+              "header": [],
+              "url": {
+                "raw": "{{base_url}}/api/track/click/:token?slot=primary",
+                "host": [
+                  "{{base_url}}"
+                ],
+                "path": [
+                  "api",
+                  "track",
+                  "click",
+                  ":token"
+                ],
+                "query": [
+                  {
+                    "key": "slot",
+                    "value": "primary",
+                    "disabled": false,
+                    "description": "primary|secondary|unsubscribe"
+                  }
+                ],
+                "variable": [
+                  {
+                    "key": "token",
+                    "value": "{{tracking_token}}",
+                    "description": "UUID from campaign_sends.tracking_token"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "GET /api/track/unsubscribe/:token",
+            "request": {
+              "method": "GET",
+              "header": [],
+              "url": {
+                "raw": "{{base_url}}/api/track/unsubscribe/:token",
+                "host": [
+                  "{{base_url}}"
+                ],
+                "path": [
+                  "api",
+                  "track",
+                  "unsubscribe",
+                  ":token"
+                ],
+                "variable": [
+                  {
+                    "key": "token",
+                    "value": "{{tracking_token}}",
+                    "description": "UUID from campaign_sends.tracking_token"
+                  }
+                ]
               }
             }
           }
@@ -2378,7 +3394,7 @@
                   },
                   "body": {
                     "mode": "raw",
-                    "raw": "{\n  \"crm_status\": \"contacted\",\n  \"crm_source\": \"landing_page\",\n  \"last_contacted_at\": \"2026-04-17T19:16:31.226Z\"\n}",
+                    "raw": "{\n  \"crm_status\": \"contacted\",\n  \"crm_source\": \"landing_page\",\n  \"last_contacted_at\": \"2026-04-17T23:13:09.507Z\"\n}",
                     "options": {
                       "raw": {
                         "language": "json"
@@ -3025,6 +4041,582 @@
                       {
                         "key": "id",
                         "value": "{{automation_id}}",
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Prospects",
+            "description": "Marketing prospect contacts database — /api/admin/prospects",
+            "item": [
+              {
+                "name": "GET /api/admin/prospects — List",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects?limit=100&offset=0",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects"
+                    ],
+                    "query": [
+                      {
+                        "key": "q",
+                        "value": "",
+                        "disabled": true,
+                        "description": "Search email/name/organisation/role"
+                      },
+                      {
+                        "key": "category",
+                        "value": "dad",
+                        "disabled": true,
+                        "description": "mum|dad|flame|candice|grandad"
+                      },
+                      {
+                        "key": "lifecycle",
+                        "value": "contact",
+                        "disabled": true,
+                        "description": "contact|opportunity|lead|customer|suppressed"
+                      },
+                      {
+                        "key": "status",
+                        "value": "active",
+                        "disabled": true,
+                        "description": "active|unsubscribed|bounced|invalid|do_not_contact|review_needed"
+                      },
+                      {
+                        "key": "sub_category",
+                        "value": "",
+                        "disabled": true,
+                        "description": "e.g. law_firm, golf_club"
+                      },
+                      {
+                        "key": "limit",
+                        "value": "100",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "offset",
+                        "value": "0",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "POST /api/admin/prospects — Create contact",
+                "request": {
+                  "method": "POST",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects"
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"events@examplevenue.com\",\n  \"category\": \"dad\",\n  \"sub_category\": \"law_firm\",\n  \"name\": \"Jane Smith\",\n  \"role\": \"HR Manager\",\n  \"organisation\": \"Example Law LLP\",\n  \"website\": \"examplelaw.com\",\n  \"city\": \"London\",\n  \"borough\": \"City of London\",\n  \"source_type\": \"manual\",\n  \"email_type\": \"role_based\",\n  \"email_confidence\": 0.75\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "GET /api/admin/prospects/:id — Detail + send history",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_id}}",
+                        "description": "prospect_contacts UUID"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "PATCH /api/admin/prospects/:id — Update fields",
+                "request": {
+                  "method": "PATCH",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_id}}",
+                        "description": ""
+                      }
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"lifecycle_stage\": \"opportunity\",\n  \"notes\": \"Responded to April campaign — interested in office delivery\"\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "DELETE /api/admin/prospects/:id",
+                "request": {
+                  "method": "DELETE",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_id}}",
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "POST /api/admin/prospects/import — Bulk CSV import",
+                "request": {
+                  "method": "POST",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects/import",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects",
+                      "import"
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"category\": \"dad\",\n  \"source_type\": \"csv_import\",\n  \"rows\": [\n    {\n      \"email\": \"hr@example1.com\",\n      \"name\": \"Alice\",\n      \"organisation\": \"Example Co\",\n      \"role\": \"HR Manager\",\n      \"category\": \"dad\"\n    },\n    {\n      \"email\": \"events@example2.com\",\n      \"name\": \"Bob\",\n      \"organisation\": \"Example Venue\",\n      \"role\": \"Events\",\n      \"category\": \"mum\"\n    }\n  ]\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "POST /api/admin/prospects/extract — AI extract or research",
+                "request": {
+                  "method": "POST",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/prospects/extract",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "prospects",
+                      "extract"
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"text\": \"\",\n  \"category\": \"dad\",\n  \"sub_category\": \"law_firm\",\n  \"location\": \"London\"\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Prospect Campaigns",
+            "description": "Marketing campaigns sent to prospect_contacts — /api/admin/campaigns",
+            "item": [
+              {
+                "name": "GET /api/admin/campaigns — List",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns?limit=50&offset=0",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns"
+                    ],
+                    "query": [
+                      {
+                        "key": "status",
+                        "value": "draft",
+                        "disabled": true,
+                        "description": "draft|sent"
+                      },
+                      {
+                        "key": "limit",
+                        "value": "50",
+                        "disabled": false,
+                        "description": ""
+                      },
+                      {
+                        "key": "offset",
+                        "value": "0",
+                        "disabled": false,
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "POST /api/admin/campaigns — Create draft",
+                "request": {
+                  "method": "POST",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns"
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"name\": \"April Corporate Outreach\",\n  \"subject\": \"Fresh juice for your team, {{name}}\",\n  \"body_html\": \"<p>Hi {{name}},</p><p>Juice for Teams delivers cold-pressed ginger shots to your office every week.</p>\",\n  \"preview_text\": \"Fresh ginger shots delivered weekly to your office\",\n  \"campaign_type\": \"prospect_only\",\n  \"category_filter\": [\n    \"dad\"\n  ],\n  \"lifecycle_filter\": [],\n  \"sub_category_filter\": [],\n  \"cta_label\": \"See subscription plans\",\n  \"cta_url\": \"https://juiceforteams.com/subscribe\",\n  \"utm_campaign\": \"april_corporate\"\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "GET /api/admin/campaigns/:id — Detail + sends + events",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_campaign_id}}",
+                        "description": "email_campaigns UUID"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "PATCH /api/admin/campaigns/:id — Update draft",
+                "request": {
+                  "method": "PATCH",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_campaign_id}}",
+                        "description": ""
+                      }
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"subject\": \"Updated subject line\",\n  \"cta_label\": \"Get started today\"\n}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "DELETE /api/admin/campaigns/:id",
+                "request": {
+                  "method": "DELETE",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns/:id",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns",
+                      ":id"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_campaign_id}}",
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "GET /api/admin/campaigns/:id/preview — Resolve recipients",
+                "request": {
+                  "method": "GET",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns/:id/preview",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns",
+                      ":id",
+                      "preview"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_campaign_id}}",
+                        "description": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "POST /api/admin/campaigns/:id/send — Send campaign",
+                "request": {
+                  "method": "POST",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    },
+                    {
+                      "key": "Cookie",
+                      "value": "sb-{{project_ref}}-auth-token={{auth_cookie_value}}"
+                    }
+                  ],
+                  "url": {
+                    "raw": "{{base_url}}/api/admin/campaigns/:id/send",
+                    "host": [
+                      "{{base_url}}"
+                    ],
+                    "path": [
+                      "api",
+                      "admin",
+                      "campaigns",
+                      ":id",
+                      "send"
+                    ],
+                    "variable": [
+                      {
+                        "key": "id",
+                        "value": "{{prospect_campaign_id}}",
                         "description": ""
                       }
                     ]

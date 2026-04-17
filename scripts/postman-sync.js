@@ -47,6 +47,25 @@ const fs   = require('fs');
 const path = require('path');
 const https = require('https');
 
+// ── Load .env.local (Node doesn't auto-load it — POSTMAN_* keys live there) ──
+(function loadDotEnvLocal() {
+  const envFile = path.join(__dirname, '..', '.env.local');
+  if (!fs.existsSync(envFile)) return;
+  const lines = fs.readFileSync(envFile, 'utf8').split('\n');
+  let loaded = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx < 1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const raw = trimmed.slice(eqIdx + 1).trim();
+    const val = raw.replace(/^(['"])(.*)\1$/, '$2'); // strip surrounding quotes
+    if (!(key in process.env)) { process.env[key] = val; loaded++; }
+  }
+  console.log(`ℹ️   Loaded .env.local (${loaded} new vars)`);
+})();
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Builder helpers
 // ──────────────────────────────────────────────────────────────────────────────
@@ -301,6 +320,58 @@ const supabaseDirectFolder = folder(
     // lead_notes
     folder('lead_notes', 'public.lead_notes — CRM activity log', [
       supabaseGet('All lead notes', 'lead_notes'),
+    ]),
+
+    // prospect_contacts
+    folder('prospect_contacts', 'public.prospect_contacts — marketing prospects database', [
+      supabaseGet('All prospects', 'prospect_contacts'),
+      supabaseGet('Active prospects', 'prospect_contacts', [
+        { key: 'status', value: 'eq.active' },
+      ]),
+      supabaseGet('Prospects by category (dad)', 'prospect_contacts', [
+        { key: 'category', value: 'eq.dad' },
+      ]),
+      supabaseGet('Opportunities (clicked CTA)', 'prospect_contacts', [
+        { key: 'lifecycle_stage', value: 'eq.opportunity' },
+      ]),
+      supabaseGet('Leads (started checkout)', 'prospect_contacts', [
+        { key: 'lifecycle_stage', value: 'eq.lead' },
+      ]),
+      supabaseGet('Customers (paid)', 'prospect_contacts', [
+        { key: 'lifecycle_stage', value: 'eq.customer' },
+      ]),
+      supabaseGetById('Get prospect by id', 'prospect_contacts'),
+    ]),
+
+    // campaign_sends
+    folder('campaign_sends', 'public.campaign_sends — per-recipient send records with tracking tokens', [
+      supabaseGet('All sends', 'campaign_sends'),
+      supabaseGet('Sent', 'campaign_sends', [
+        { key: 'status', value: 'eq.sent' },
+      ]),
+      supabaseGet('Clicked', 'campaign_sends', [
+        { key: 'status', value: 'eq.clicked' },
+      ]),
+      supabaseGet('Unsubscribed', 'campaign_sends', [
+        { key: 'status', value: 'eq.unsubscribed' },
+      ]),
+      supabaseGet('Failed', 'campaign_sends', [
+        { key: 'status', value: 'eq.failed' },
+      ]),
+    ]),
+
+    // campaign_events
+    folder('campaign_events', 'public.campaign_events — tracked interactions (clicks, unsubscribes, lifecycle changes)', [
+      supabaseGet('All events', 'campaign_events'),
+      supabaseGet('Primary CTA clicks', 'campaign_events', [
+        { key: 'event_type', value: 'eq.click_cta_primary' },
+      ]),
+      supabaseGet('Secondary CTA clicks', 'campaign_events', [
+        { key: 'event_type', value: 'eq.click_cta_secondary' },
+      ]),
+      supabaseGet('Unsubscribes', 'campaign_events', [
+        { key: 'event_type', value: 'eq.unsubscribe' },
+      ]),
     ]),
 
     // SQL RPC
@@ -805,6 +876,159 @@ const adminApiFolder = folder(
       ),
     ]),
 
+    // Prospects
+    folder('Prospects', 'Marketing prospect contacts database — /api/admin/prospects', [
+      req(
+        'GET /api/admin/prospects — List',
+        'GET',
+        url(v('base_url'), ['api', 'admin', 'prospects'], [
+          { key: 'q',            value: '',        disabled: true, description: 'Search email/name/organisation/role' },
+          { key: 'category',     value: 'dad',     disabled: true, description: 'mum|dad|flame|candice|grandad' },
+          { key: 'lifecycle',    value: 'contact', disabled: true, description: 'contact|opportunity|lead|customer|suppressed' },
+          { key: 'status',       value: 'active',  disabled: true, description: 'active|unsubscribed|bounced|invalid|do_not_contact|review_needed' },
+          { key: 'sub_category', value: '',        disabled: true, description: 'e.g. law_firm, golf_club' },
+          { key: 'limit',        value: '100' },
+          { key: 'offset',       value: '0' },
+        ]),
+        appHdrs(),
+      ),
+      req(
+        'POST /api/admin/prospects — Create contact',
+        'POST',
+        url(v('base_url'), ['api', 'admin', 'prospects']),
+        appHdrs(),
+        rawBody({
+          email:            'events@examplevenue.com',
+          category:         'dad',
+          sub_category:     'law_firm',
+          name:             'Jane Smith',
+          role:             'HR Manager',
+          organisation:     'Example Law LLP',
+          website:          'examplelaw.com',
+          city:             'London',
+          borough:          'City of London',
+          source_type:      'manual',
+          email_type:       'role_based',
+          email_confidence: 0.75,
+        }),
+      ),
+      req(
+        'GET /api/admin/prospects/:id — Detail + send history',
+        'GET',
+        url(v('base_url'), ['api', 'admin', 'prospects', ':id'], [], [{ key: 'id', value: v('prospect_id'), description: 'prospect_contacts UUID' }]),
+        appHdrs(),
+      ),
+      req(
+        'PATCH /api/admin/prospects/:id — Update fields',
+        'PATCH',
+        url(v('base_url'), ['api', 'admin', 'prospects', ':id'], [], [{ key: 'id', value: v('prospect_id') }]),
+        appHdrs(),
+        rawBody({
+          lifecycle_stage: 'opportunity',
+          notes:           'Responded to April campaign — interested in office delivery',
+        }),
+      ),
+      req(
+        'DELETE /api/admin/prospects/:id',
+        'DELETE',
+        url(v('base_url'), ['api', 'admin', 'prospects', ':id'], [], [{ key: 'id', value: v('prospect_id') }]),
+        appHdrs(),
+      ),
+      req(
+        'POST /api/admin/prospects/import — Bulk CSV import',
+        'POST',
+        url(v('base_url'), ['api', 'admin', 'prospects', 'import']),
+        appHdrs(),
+        rawBody({
+          category:    'dad',
+          source_type: 'csv_import',
+          rows: [
+            { email: 'hr@example1.com',     name: 'Alice',  organisation: 'Example Co',    role: 'HR Manager', category: 'dad' },
+            { email: 'events@example2.com', name: 'Bob',    organisation: 'Example Venue', role: 'Events',     category: 'mum' },
+          ],
+        }),
+      ),
+      req(
+        'POST /api/admin/prospects/extract — AI extract or research',
+        'POST',
+        url(v('base_url'), ['api', 'admin', 'prospects', 'extract']),
+        appHdrs(),
+        rawBody({
+          text:         '',
+          category:     'dad',
+          sub_category: 'law_firm',
+          location:     'London',
+        }),
+      ),
+    ]),
+
+    // Prospect Campaigns
+    folder('Prospect Campaigns', 'Marketing campaigns sent to prospect_contacts — /api/admin/campaigns', [
+      req(
+        'GET /api/admin/campaigns — List',
+        'GET',
+        url(v('base_url'), ['api', 'admin', 'campaigns'], [
+          { key: 'status', value: 'draft', disabled: true, description: 'draft|sent' },
+          { key: 'limit',  value: '50' },
+          { key: 'offset', value: '0' },
+        ]),
+        appHdrs(),
+      ),
+      req(
+        'POST /api/admin/campaigns — Create draft',
+        'POST',
+        url(v('base_url'), ['api', 'admin', 'campaigns']),
+        appHdrs(),
+        rawBody({
+          name:                'April Corporate Outreach',
+          subject:             'Fresh juice for your team, {{name}}',
+          body_html:           '<p>Hi {{name}},</p><p>Juice for Teams delivers cold-pressed ginger shots to your office every week.</p>',
+          preview_text:        'Fresh ginger shots delivered weekly to your office',
+          campaign_type:       'prospect_only',
+          category_filter:     ['dad'],
+          lifecycle_filter:    [],
+          sub_category_filter: [],
+          cta_label:           'See subscription plans',
+          cta_url:             'https://juiceforteams.com/subscribe',
+          utm_campaign:        'april_corporate',
+        }),
+      ),
+      req(
+        'GET /api/admin/campaigns/:id — Detail + sends + events',
+        'GET',
+        url(v('base_url'), ['api', 'admin', 'campaigns', ':id'], [], [{ key: 'id', value: v('prospect_campaign_id'), description: 'email_campaigns UUID' }]),
+        appHdrs(),
+      ),
+      req(
+        'PATCH /api/admin/campaigns/:id — Update draft',
+        'PATCH',
+        url(v('base_url'), ['api', 'admin', 'campaigns', ':id'], [], [{ key: 'id', value: v('prospect_campaign_id') }]),
+        appHdrs(),
+        rawBody({
+          subject:   'Updated subject line',
+          cta_label: 'Get started today',
+        }),
+      ),
+      req(
+        'DELETE /api/admin/campaigns/:id',
+        'DELETE',
+        url(v('base_url'), ['api', 'admin', 'campaigns', ':id'], [], [{ key: 'id', value: v('prospect_campaign_id') }]),
+        appHdrs(),
+      ),
+      req(
+        'GET /api/admin/campaigns/:id/preview — Resolve recipients',
+        'GET',
+        url(v('base_url'), ['api', 'admin', 'campaigns', ':id', 'preview'], [], [{ key: 'id', value: v('prospect_campaign_id') }]),
+        appHdrs(),
+      ),
+      req(
+        'POST /api/admin/campaigns/:id/send — Send campaign',
+        'POST',
+        url(v('base_url'), ['api', 'admin', 'campaigns', ':id', 'send'], [], [{ key: 'id', value: v('prospect_campaign_id') }]),
+        appHdrs(),
+      ),
+    ]),
+
     // Reports
     folder('Reports', '', [
       req(
@@ -840,7 +1064,40 @@ const adminApiFolder = folder(
 );
 
 // ──────────────────────────────────────────────────────────────────────────────
-// SECTION 6 — Internal (cron + webhooks)
+// SECTION 6 — Tracking (open endpoints — token is the credential)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const trackingFolder = folder(
+  '📩 Tracking',
+  'Email click tracking and unsubscribe handlers. Open endpoints — the UUID tracking_token in the URL acts as the credential.',
+  [
+    req(
+      'GET /api/track/click/:token?slot=primary',
+      'GET',
+      url(
+        v('base_url'),
+        ['api', 'track', 'click', ':token'],
+        [{ key: 'slot', value: 'primary', description: 'primary|secondary|unsubscribe' }],
+        [{ key: 'token', value: v('tracking_token'), description: 'UUID from campaign_sends.tracking_token' }],
+      ),
+      [],
+    ),
+    req(
+      'GET /api/track/unsubscribe/:token',
+      'GET',
+      url(
+        v('base_url'),
+        ['api', 'track', 'unsubscribe', ':token'],
+        [],
+        [{ key: 'token', value: v('tracking_token'), description: 'UUID from campaign_sends.tracking_token' }],
+      ),
+      [],
+    ),
+  ],
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SECTION 7 — Internal (cron + webhooks)
 // ──────────────────────────────────────────────────────────────────────────────
 
 const internalFolder = folder(
@@ -899,14 +1156,18 @@ const collection = {
     { key: 'address_id',               value: '',                         type: 'string', description: 'UUID of a real address row' },
     { key: 'contact_id',               value: '',                         type: 'string', description: 'UUID from auth.users (use GET /api/admin/contacts)' },
     { key: 'opportunity_id',           value: '',                         type: 'string', description: 'UUID of a subscription (admin opportunities view)' },
-    { key: 'campaign_id',              value: '',                         type: 'string', description: 'UUID of a real email_campaigns row' },
+    { key: 'campaign_id',              value: '',                         type: 'string', description: 'UUID of a real email_campaigns row (legacy leads campaign)' },
     { key: 'automation_id',            value: '',                         type: 'string', description: 'UUID of a real email_automation_rules row' },
     { key: 'record_id',                value: '',                         type: 'string', description: 'Generic UUID used by Supabase Direct single-row GETs' },
+    { key: 'prospect_id',              value: '',                         type: 'string', description: 'UUID of a real prospect_contacts row' },
+    { key: 'prospect_campaign_id',     value: '',                         type: 'string', description: 'UUID of a prospect email_campaigns row (campaign_type=prospect_only|mixed)' },
+    { key: 'tracking_token',           value: '',                         type: 'string', description: 'tracking_token UUID from a campaign_sends row (paste from Supabase Direct → campaign_sends)' },
   ],
   item: [
     authFolder,
     supabaseDirectFolder,
     publicApiFolder,
+    trackingFolder,
     authenticatedApiFolder,
     adminApiFolder,
     internalFolder,

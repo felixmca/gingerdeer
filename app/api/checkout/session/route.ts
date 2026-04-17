@@ -4,8 +4,11 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { stripe, toPence } from "@/lib/stripe";
 import { computeSubscriptionPrice, computeOneOffPrice, FORMAT_META } from "@/lib/products";
 import { FREQ_LABEL } from "@/lib/funnel-logic";
+import { createLogger } from "@/lib/logger";
 import type { Format } from "@/lib/products";
 import type { Frequency } from "@/lib/funnel-logic";
+
+const log = createLogger("checkout/session");
 
 interface LineItem {
   productSlug: string;
@@ -93,12 +96,14 @@ export async function POST(req: NextRequest) {
   const lineItemsLog = Array.isArray(body.lineItems)
     ? (body.lineItems as LineItem[]).map(i => `${i.quantity}×${i.productSlug}(${i.format})`).join(", ")
     : "—";
-  console.log(
-    `[checkout/session] user=${user.email} mode=${mode ?? existingSubscriptionId ? "existingSub" : "?"} ` +
-    `saveDraft=${saveDraft} items=[${lineItemsLog}]` +
-    (body.frequency ? ` freq=${body.frequency}` : "") +
-    (body.deliveryDate ? ` date=${body.deliveryDate}` : "")
-  );
+  log.input("POST /api/checkout/session", {
+    user: user.email,
+    mode: existingSubscriptionId ? "existingSub" : (mode ?? "?"),
+    saveDraft,
+    items: lineItemsLog || "—",
+    frequency: body.frequency || null,
+    deliveryDate: body.deliveryDate || null,
+  });
 
   const service = createServiceClient();
 
@@ -147,7 +152,7 @@ export async function POST(req: NextRequest) {
     const subDescription = subLineItems.length > 0
       ? subLineItems.map((i: LineItem) => `${i.quantity} × ${i.productSlug.replace(/_/g, " ")} ${i.format}`).join(", ")
       : ((existingSub.product_slug as string) ?? "Juice subscription");
-    const subFreqLabel = FREQ_LABEL[subFrequency] ?? subFrequency ?? "";
+    const subFreqLabel = subFrequency ? (FREQ_LABEL[subFrequency] ?? subFrequency) : "";
 
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
@@ -344,6 +349,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to create subscription record" }, { status: 500 });
     }
 
+    log.dbResult("subscription record created", { id: finalSub!.id, status: finalSub!.status });
+
+    // Advance prospect lifecycle: contact/opportunity → lead
+    if (user.email) {
+      const emailKey = user.email.toLowerCase().trim();
+      log.db("UPDATE prospect_contacts lifecycle → lead", { email_hash: emailKey, condition: "IN (contact, opportunity)" });
+      await service
+        .from("prospect_contacts")
+        .update({ lifecycle_stage: "lead", lifecycle_updated_at: new Date().toISOString() })
+        .eq("email_hash", emailKey)
+        .in("lifecycle_stage", ["contact", "opportunity"]);
+      log.dbResult("prospect lifecycle advanced → lead (best-effort)", { email: user.email });
+    }
+
     // Save-as-draft: return without Stripe
     if (saveDraft) {
       return NextResponse.json({ saved: true, subscriptionId: finalSub!.id });
@@ -379,7 +398,7 @@ export async function POST(req: NextRequest) {
       .update({ stripe_checkout_session_id: session.id })
       .eq("id", finalSub!.id);
 
-    console.log(`[checkout/session] ✓ subscription session created sub=${finalSub!.id} stripe=${session.id} total=£${pricing.totalPerMonthIncVat}/mo`);
+    log.done("subscription checkout session created", { sub_id: finalSub!.id, stripe_session: session.id, total_per_month: `£${pricing.totalPerMonthIncVat}` });
     return NextResponse.json({ clientSecret: session.client_secret });
   }
 
@@ -439,6 +458,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to create order record" }, { status: 500 });
   }
 
+  log.dbResult("order record created", { id: finalOrder!.id, status: finalOrder!.status });
+
+  // Advance prospect lifecycle: contact/opportunity → lead
+  if (user.email) {
+    const emailKey = user.email.toLowerCase().trim();
+    log.db("UPDATE prospect_contacts lifecycle → lead (one-off)", { email_hash: emailKey });
+    await service
+      .from("prospect_contacts")
+      .update({ lifecycle_stage: "lead", lifecycle_updated_at: new Date().toISOString() })
+      .eq("email_hash", emailKey)
+      .in("lifecycle_stage", ["contact", "opportunity"]);
+    log.dbResult("prospect lifecycle advanced → lead (one-off, best-effort)", { email: user.email });
+  }
+
   if (saveDraft) {
     return NextResponse.json({ saved: true, orderId: finalOrder!.id });
   }
@@ -470,6 +503,6 @@ export async function POST(req: NextRequest) {
     .eq("id", finalOrder!.id);
 
   const oneOffTotal = sumOneOffPrice(lineItems).totalIncVat;
-  console.log(`[checkout/session] ✓ one-off session created order=${finalOrder!.id} stripe=${session.id} total=£${oneOffTotal} date=${deliveryDate}`);
+  log.done("one-off checkout session created", { order_id: finalOrder!.id, stripe_session: session.id, total: `£${oneOffTotal}`, delivery_date: deliveryDate });
   return NextResponse.json({ clientSecret: session.client_secret });
 }
