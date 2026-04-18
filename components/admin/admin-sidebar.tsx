@@ -95,6 +95,19 @@ export function AdminSidebar() {
           <span>Prospects</span>
         </a>
 
+        <a href="/admin/lists" className={cls("/admin/lists")} title="Lists">
+          {/* Bullet list */}
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="2.5" cy="4.5" r="1" fill="currentColor" stroke="none" />
+            <path d="M5.5 4.5h8" />
+            <circle cx="2.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+            <path d="M5.5 7.5h8" />
+            <circle cx="2.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+            <path d="M5.5 10.5h8" />
+          </svg>
+          <span>Lists</span>
+        </a>
+
         <a href="/admin/campaigns" className={cls("/admin/campaigns")} title="Campaigns">
           {/* Megaphone */}
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

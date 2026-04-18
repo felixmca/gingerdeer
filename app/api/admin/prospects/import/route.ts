@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   const adminUser = await requireAdmin();
   if (!adminUser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  let body: { rows?: unknown[]; category?: string; source_type?: string };
+  let body: { rows?: unknown[]; category?: string; source_type?: string; extract_query_id?: string };
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
@@ -61,6 +61,7 @@ export async function POST(request: Request) {
 
   const defaultCategory   = (body.category ?? "").trim();
   const defaultSourceType = (body.source_type ?? "csv_import").trim();
+  const extractQueryId    = (body.extract_query_id as string | undefined) ?? null;
 
   log.input("POST /api/admin/prospects/import", {
     row_count: rows.length,
@@ -168,6 +169,7 @@ export async function POST(request: Request) {
       status:             "active",
       lifecycle_stage:    "contact",
       reviewed:           false,
+      extract_query_id:   extractQueryId || null,
     });
     // mark as seen so in-batch duplicates don't double-insert
     existingHashes.add(hash);

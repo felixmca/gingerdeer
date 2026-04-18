@@ -101,6 +101,7 @@ export async function POST(request: Request) {
       category_filter:     Array.isArray(body.category_filter)     ? body.category_filter     : [],
       lifecycle_filter:    Array.isArray(body.lifecycle_filter)    ? body.lifecycle_filter    : [],
       sub_category_filter: Array.isArray(body.sub_category_filter) ? body.sub_category_filter : [],
+      list_ids:            Array.isArray(body.list_ids)            ? body.list_ids            : [],
       cta_label:           (body.cta_label as string | null)           ?? null,
       cta_url:             (body.cta_url as string | null)             ?? null,
       secondary_cta_label: (body.secondary_cta_label as string | null) ?? null,

@@ -257,3 +257,112 @@ ALTER TABLE public.email_campaigns
 -- SELECT column_name FROM information_schema.columns
 --   WHERE table_name = 'email_campaigns'
 --   ORDER BY ordinal_position;                           -- includes new columns
+
+
+-- =============================================================
+-- TABLE 4: prospect_extract_queries
+-- =============================================================
+-- Stores every AI extract/research query so contacts can be
+-- traced back to the query that generated them.
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS public.prospect_extract_queries (
+  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  mode          text        NOT NULL,  -- 'research' | 'extract'
+  category      text,
+  sub_category  text,
+  location      text,
+  source_url    text,
+  raw_text      text,         -- truncated source text (extract mode)
+  contact_count int          NOT NULL DEFAULT 0,
+  response_raw  text,         -- first 5000 chars of Claude's response
+  created_by    uuid         REFERENCES auth.users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE public.prospect_contacts
+  ADD COLUMN IF NOT EXISTS extract_query_id uuid
+    REFERENCES public.prospect_extract_queries(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS pc_extract_query_id_idx
+  ON public.prospect_contacts (extract_query_id);
+
+ALTER TABLE public.prospect_extract_queries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospect_extract_queries_service_only ON public.prospect_extract_queries;
+CREATE POLICY prospect_extract_queries_service_only ON public.prospect_extract_queries
+  USING (false) WITH CHECK (false);
+GRANT SELECT, INSERT ON public.prospect_extract_queries TO service_role;
+
+
+-- =============================================================
+-- TABLE 5: prospect_lists
+-- =============================================================
+-- Named lists of prospect contacts for campaign targeting.
+-- Two types:
+--   'filter' — dynamically matches contacts by criteria at send time
+--   'manual' — hand-curated via prospect_list_members
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS public.prospect_lists (
+  id                   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  name                 text        NOT NULL,
+  description          text,
+  list_type            text        NOT NULL DEFAULT 'manual'
+    CHECK (list_type IN ('manual', 'filter')),
+  -- Filter criteria (for list_type = 'filter')
+  category_filter      text[]      NOT NULL DEFAULT '{}',
+  lifecycle_filter     text[]      NOT NULL DEFAULT '{}',
+  sub_category_filter  text[]      NOT NULL DEFAULT '{}',
+  status_filter        text[]      NOT NULL DEFAULT '{}',
+  -- Denormalised member count (manual lists only; filter lists compute live)
+  contact_count        int         NOT NULL DEFAULT 0,
+  created_by           uuid        REFERENCES auth.users(id) ON DELETE SET NULL
+);
+
+DROP TRIGGER IF EXISTS prospect_lists_updated_at ON public.prospect_lists;
+CREATE TRIGGER prospect_lists_updated_at
+  BEFORE UPDATE ON public.prospect_lists
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE INDEX IF NOT EXISTS pl_created_at_idx ON public.prospect_lists (created_at DESC);
+
+ALTER TABLE public.prospect_lists ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospect_lists_service_only ON public.prospect_lists;
+CREATE POLICY prospect_lists_service_only ON public.prospect_lists
+  USING (false) WITH CHECK (false);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.prospect_lists TO service_role;
+
+
+-- =============================================================
+-- TABLE 6: prospect_list_members
+-- =============================================================
+-- Junction table for manually-curated list membership.
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS public.prospect_list_members (
+  list_id    uuid NOT NULL REFERENCES public.prospect_lists(id) ON DELETE CASCADE,
+  contact_id uuid NOT NULL REFERENCES public.prospect_contacts(id) ON DELETE CASCADE,
+  added_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (list_id, contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS plm_list_id_idx    ON public.prospect_list_members (list_id);
+CREATE INDEX IF NOT EXISTS plm_contact_id_idx ON public.prospect_list_members (contact_id);
+
+ALTER TABLE public.prospect_list_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospect_list_members_service_only ON public.prospect_list_members;
+CREATE POLICY prospect_list_members_service_only ON public.prospect_list_members
+  USING (false) WITH CHECK (false);
+GRANT SELECT, INSERT, DELETE ON public.prospect_list_members TO service_role;
+
+
+-- =============================================================
+-- ALTER email_campaigns: add list_ids for list-based targeting
+-- =============================================================
+
+ALTER TABLE public.email_campaigns
+  ADD COLUMN IF NOT EXISTS list_ids uuid[] NOT NULL DEFAULT '{}';
+  -- Empty = use filter-based targeting
+  -- Non-empty = send to all active members of these lists

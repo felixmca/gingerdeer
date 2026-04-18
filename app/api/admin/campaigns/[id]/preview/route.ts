@@ -31,7 +31,7 @@ export async function GET(_req: Request, { params }: Params) {
 
   const { data: campaign, error: campErr } = await service
     .from("email_campaigns")
-    .select("id, campaign_type, category_filter, lifecycle_filter, sub_category_filter, status")
+    .select("id, campaign_type, category_filter, lifecycle_filter, sub_category_filter, list_ids, status")
     .eq("id", id)
     .single();
 
@@ -48,6 +48,7 @@ export async function GET(_req: Request, { params }: Params) {
       category_filter:     campaign.category_filter ?? [],
       lifecycle_filter:    campaign.lifecycle_filter ?? [],
       sub_category_filter: campaign.sub_category_filter ?? [],
+      list_ids:            campaign.list_ids ?? [],
     },
   });
 }
@@ -59,6 +60,7 @@ type CampaignFilters = {
   category_filter:      string[];
   lifecycle_filter:     string[];
   sub_category_filter:  string[];
+  list_ids?:            string[];
 };
 
 type ServiceClient = ReturnType<typeof import("@/lib/supabase/service").createServiceClient>;
@@ -67,6 +69,27 @@ export async function resolveProspectRecipients(
   service: ServiceClient,
   campaign: CampaignFilters,
 ): Promise<{ id: string; email: string; name: string | null; contact_id: string }[]> {
+
+  // List-based targeting: resolve members from specific lists
+  if (campaign.list_ids && campaign.list_ids.length > 0) {
+    const { data: members } = await service
+      .from("prospect_list_members")
+      .select("contact_id, prospect_contacts(id, email, name, status, lifecycle_stage)")
+      .in("list_id", campaign.list_ids);
+
+    if (!members) return [];
+    return members
+      .filter((m) => {
+        const c = (m.prospect_contacts as unknown) as { status: string; lifecycle_stage: string } | null;
+        return c && isSendable({ status: c.status as "active" | "unsubscribed" | "bounced" | "invalid" | "do_not_contact" | "review_needed", lifecycle_stage: c.lifecycle_stage as "contact" | "opportunity" | "lead" | "customer" | "suppressed" });
+      })
+      .map((m) => {
+        const c = (m.prospect_contacts as unknown) as { id: string; email: string; name: string | null };
+        return { id: c.id, email: c.email, name: c.name, contact_id: c.id };
+      });
+  }
+
+  // Filter-based targeting (existing behavior)
   let query = service
     .from("prospect_contacts")
     .select("id, email, name, status, lifecycle_stage")

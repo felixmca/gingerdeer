@@ -74,6 +74,7 @@ export async function PATCH(request: Request, { params }: Params) {
     "name", "subject", "body_html", "preview_text",
     "campaign_type",
     "category_filter", "lifecycle_filter", "sub_category_filter",
+    "list_ids",
     "cta_label", "cta_url", "secondary_cta_label", "secondary_cta_url",
     "utm_campaign",
   ] as const;

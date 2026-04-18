@@ -1238,9 +1238,18 @@ async function pushToPostman() {
     if (res.status === 200 || res.status === 201) {
       const uid = res.body.collection?.uid;
       console.log(`✅  Created collection: ${uid}`);
-      console.log(`    Set this in your env to enable updates:`);
-      console.log(`    POSTMAN_COLLECTION_UID=${uid}`);
       console.log(`    View at: https://go.postman.co/collections/${uid}`);
+
+      // Auto-save UID to .env.local so next run updates instead of creates
+      try {
+        const envFile = path.join(__dirname, '..', '.env.local');
+        const existing = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
+        const updated  = existing.trimEnd() + `\nPOSTMAN_COLLECTION_UID=${uid}\n`;
+        fs.writeFileSync(envFile, updated, 'utf8');
+        console.log(`    ✅  Saved POSTMAN_COLLECTION_UID to .env.local — future runs will update, not create.`);
+      } catch (e) {
+        console.warn(`    ⚠️   Could not write .env.local — add manually: POSTMAN_COLLECTION_UID=${uid}`);
+      }
     } else {
       console.error(`❌  Postman API error (${res.status}):`, JSON.stringify(res.body, null, 2));
       process.exit(1);

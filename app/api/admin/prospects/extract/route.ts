@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { isAdmin } from "@/lib/admin";
 import { createLogger } from "@/lib/logger";
 import { NextResponse } from "next/server";
@@ -92,11 +93,10 @@ export async function POST(request: Request) {
   "name": "string | null — person's full name if known",
   "role": "string | null — job title (e.g. 'Events Manager', 'Club Secretary', 'Office Manager')",
   "organisation": "string | null — venue / company name",
-  "website": "string | null — official website domain",
+  "website": "string | null — full website URL starting with https:// (e.g. https://ronniescotts.co.uk), or null if unknown",
   "phone": "string | null",
   "city": "string | null",
   "borough": "string | null — London borough if applicable",
-  "category": "string | null",
   "sub_category": "string | null",
   "email_type": "'personal' | 'generic' | 'role_based'",
   "email_confidence": "number 0.0–1.0",
@@ -209,22 +209,55 @@ ${rawText}`;
       default_category: category || null,
     });
 
-    const enriched = contacts.map((c) => ({
-      ...c,
-      category:     c.category     || category  || null,
-      sub_category: c.sub_category || sub_cat   || null,
-      source_url:   source_url || null,
-      source_type:  sourceType,
-      source_raw:   isResearchMode ? `research: ${userPrompt.slice(0, 500)}` : rawText.slice(0, 2000),
-    }));
+    const enriched = contacts.map((c) => {
+      // Normalize website to full URL
+      let website = (c.website as string | null) ?? null;
+      if (website && !website.startsWith("http")) website = `https://${website}`;
+
+      return {
+        ...c,
+        category:     category || null,   // user's category always wins
+        sub_category: c.sub_category || sub_cat || null,
+        website,
+        source_url:   source_url || null,
+        source_type:  sourceType,
+        source_raw:   isResearchMode ? `research: ${userPrompt.slice(0, 500)}` : rawText.slice(0, 2000),
+      };
+    });
 
     const mode = isResearchMode ? "research" : "extract";
     log.done(`${mode} complete`, { contacts: enriched.length, needs_verification: isResearchMode });
+
+    // ── Store query record ───────────────────────────────────────────────────
+    let queryId: string | null = null;
+    try {
+      const service = createServiceClient();
+      const { data: qRow } = await service
+        .from("prospect_extract_queries")
+        .insert({
+          mode:          mode,
+          category:      category || null,
+          sub_category:  sub_cat || null,
+          location:      isResearchMode ? location : null,
+          source_url:    source_url || null,
+          raw_text:      isResearchMode ? null : rawText.slice(0, 2000),
+          contact_count: enriched.length,
+          response_raw:  raw.slice(0, 5000),
+          created_by:    adminUser.id,
+        })
+        .select("id")
+        .single();
+      if (qRow) queryId = qRow.id;
+    } catch {
+      // Non-blocking — query tracking failure should not fail the request
+    }
+
     return NextResponse.json({
       contacts:      enriched,
       count:         enriched.length,
       mode,
       needs_verification: isResearchMode,
+      query_id:      queryId,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

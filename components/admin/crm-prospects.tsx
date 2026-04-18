@@ -77,7 +77,7 @@ interface ExtractedContact {
 function AiExtractPanel({
   onImport,
 }: {
-  onImport: (contacts: ExtractedContact[]) => void;
+  onImport: (contacts: ExtractedContact[], queryId: string | null) => void;
 }) {
   const [text, setText]           = useState("");
   const [category, setCategory]   = useState("");
@@ -89,6 +89,7 @@ function AiExtractPanel({
   const [selected, setSelected]   = useState<Set<number>>(new Set());
   const [error, setError]         = useState<string | null>(null);
   const [mode, setMode]           = useState<"extract" | "research" | null>(null);
+  const [queryId, setQueryId]     = useState<string | null>(null);
 
   // Research mode = no text, or text is a short plain-English query (no @ or http)
   const isResearchMode =
@@ -118,6 +119,7 @@ function AiExtractPanel({
       if (!res.ok) { setError(json.error ?? "Extraction failed"); return; }
       setExtracted(json.contacts ?? []);
       setMode(json.mode ?? "extract");
+      setQueryId(json.query_id ?? null);
       setSelected(new Set((json.contacts ?? []).map((_: unknown, i: number) => i)));
     } catch {
       setError("Network error");
@@ -136,7 +138,7 @@ function AiExtractPanel({
 
   function handleConfirmImport() {
     const rows = extracted.filter((_, i) => selected.has(i));
-    onImport(rows);
+    onImport(rows, queryId);
     setExtracted([]);
     setSelected(new Set());
     setText("");
@@ -767,11 +769,11 @@ export function CrmProspectsPage() {
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
-  function handleImportExtracted(rows: ExtractedContact[]) {
+  function handleImportExtracted(rows: ExtractedContact[], queryId: string | null) {
     fetch("/api/admin/prospects/import", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ rows }),
+      body:    JSON.stringify({ rows, extract_query_id: queryId }),
     })
       .then((r) => r.json())
       .then(() => { fetchContacts(); setPanel("none"); })

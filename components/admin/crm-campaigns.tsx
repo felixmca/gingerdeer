@@ -18,6 +18,7 @@ interface Campaign {
   category_filter:      string[];
   lifecycle_filter:     string[];
   sub_category_filter:  string[];
+  list_ids:             string[];
   cta_label:            string | null;
   cta_url:              string | null;
   secondary_cta_label:  string | null;
@@ -26,6 +27,13 @@ interface Campaign {
   status:               "draft" | "sent";
   sent_at:              string | null;
   recipient_count:      number;
+}
+
+interface ProspectList {
+  id:          string;
+  name:        string;
+  list_type:   "manual" | "filter";
+  contact_count: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,11 +79,20 @@ function CampaignComposer({
   const [categoryFilter,    setCategoryFilter]    = useState<string[]>(existing?.category_filter    ?? []);
   const [lifecycleFilter,   setLifecycleFilter]   = useState<string[]>(existing?.lifecycle_filter   ?? []);
   const [subCatFilter,      setSubCatFilter]      = useState(existing?.sub_category_filter?.join(", ") ?? "");
+  const [listIds,           setListIds]           = useState<string[]>(existing?.list_ids ?? []);
+  const [availableLists,    setAvailableLists]    = useState<ProspectList[]>([]);
 
   const [saving,   setSaving]   = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [error,    setError]    = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/lists?limit=100")
+      .then((r) => r.json())
+      .then((json) => setAvailableLists(json.lists ?? []))
+      .catch(() => {});
+  }, []);
 
   function setField(k: string, v: string) {
     setFields((f) => ({ ...f, [k]: v }));
@@ -101,6 +118,7 @@ function CampaignComposer({
       category_filter:     categoryFilter,
       lifecycle_filter:    lifecycleFilter,
       sub_category_filter: subCatFilter.split(",").map((s) => s.trim()).filter(Boolean),
+      list_ids:            listIds,
       campaign_type:       "prospect_only",
     };
 
@@ -258,6 +276,37 @@ function CampaignComposer({
             />
           </div>
         </fieldset>
+
+        {availableLists.length > 0 && (
+          <fieldset className="adm-fieldset" disabled={isSent}>
+            <legend className="adm-fieldset__legend">Target: Lists</legend>
+            <p className="adm-hint">
+              Select specific lists to target. If any lists are selected, they take priority over
+              the filter criteria above.
+            </p>
+            <div className="adm-check-group">
+              {availableLists.map((l) => (
+                <label key={l.id} className="adm-check-label">
+                  <input
+                    type="checkbox"
+                    checked={listIds.includes(l.id)}
+                    onChange={() =>
+                      setListIds((prev) =>
+                        prev.includes(l.id)
+                          ? prev.filter((id) => id !== l.id)
+                          : [...prev, l.id]
+                      )
+                    }
+                  />
+                  <span>{l.name}</span>
+                  <span style={{ color: "#78716c", fontSize: 12 }}>
+                    ({l.list_type === "filter" ? "filter" : `${l.contact_count} manual`})
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
         {/* Preview count */}
         {isEdit && !isSent && (
