@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isAdmin } from "@/lib/admin";
 import { buildTrackingUrl } from "@/lib/prospects";
-import { resolveProspectRecipients } from "../preview/route";
+import { resolveProspectRecipients } from "@/lib/campaign-recipients";
 import { createLogger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
