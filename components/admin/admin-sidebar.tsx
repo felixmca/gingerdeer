@@ -54,14 +54,14 @@ export function AdminSidebar() {
           <span>Leads</span>
         </a>
 
-        <a href="/admin/contacts" className={cls("/admin/contacts")} title="Contacts">
+        <a href="/admin/contacts" className={cls("/admin/contacts")} title="Users">
           {/* Address book / person card */}
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="2.5" y="1.5" width="10" height="12" rx="1.5" />
             <circle cx="7.5" cy="6" r="2" />
             <path d="M4 13c0-1.93 1.57-3.5 3.5-3.5S11 11.07 11 13" />
           </svg>
-          <span>Contacts</span>
+          <span>Users</span>
         </a>
 
         <a href="/admin/accounts" className={cls("/admin/accounts")} title="Accounts">
@@ -74,12 +74,12 @@ export function AdminSidebar() {
           <span>Accounts</span>
         </a>
 
-        <a href="/admin/opportunities" className={cls("/admin/opportunities")} title="Opportunities">
+        <a href="/admin/opportunities" className={cls("/admin/opportunities")} title="Subscriptions">
           {/* Funnel / pipeline */}
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M1.5 2.5h12l-4.5 5v5l-3-1.5V7.5L1.5 2.5Z" />
           </svg>
-          <span>Opportunities</span>
+          <span>Subscriptions</span>
         </a>
 
         {/* Marketing section */}

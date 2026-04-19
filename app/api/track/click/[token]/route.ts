@@ -106,7 +106,7 @@ export async function GET(request: Request, { params }: Params) {
   log.db("INSERT campaign_events", { event_type: eventType, cta_slot: slot, campaign_id: sendRow.campaign_id, contact_id: sendRow.contact_id });
   log.db("UPDATE campaign_sends → clicked", { id: sendRow.id });
   if (sendRow.contact_id) {
-    log.db("UPDATE prospect_contacts lifecycle contact → opportunity", { contact_id: sendRow.contact_id });
+    log.db("UPDATE prospect_contacts lifecycle pre_opp → opp", { contact_id: sendRow.contact_id });
   }
 
   const [, , lifecycleResult] = await Promise.all([
@@ -129,17 +129,17 @@ export async function GET(request: Request, { params }: Params) {
       .update({ status: "clicked", clicked_at: new Date().toISOString() })
       .eq("id", sendRow.id),
 
-    // Advance lifecycle: contact → opportunity (slot is already "primary"|"secondary" here)
+    // Advance lifecycle: pre_opp → opp (slot is already "primary"|"secondary" here)
     sendRow.contact_id
       ? service
           .from("prospect_contacts")
           .update({
-            lifecycle_stage:      "opportunity",
+            lifecycle_stage:      "opp",
             lifecycle_updated_at: new Date().toISOString(),
             last_campaign_id:     sendRow.campaign_id,
           })
           .eq("id", sendRow.contact_id)
-          .eq("lifecycle_stage", "contact")  // only advance if still at 'contact'
+          .eq("lifecycle_stage", "pre_opp")  // only advance if still at 'pre_opp'
       : Promise.resolve(),
   ]);
 

@@ -469,7 +469,7 @@ export default function CrmOpportunitiesPage() {
     <>
       <style>{styles}</style>
       <div className="adm-page">
-        <h1>Opportunities</h1>
+        <h1>Subscriptions</h1>
 
         <div className="adm-toolbar">
           <input

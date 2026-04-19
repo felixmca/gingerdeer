@@ -27,7 +27,7 @@ export async function resolveProspectRecipients(
     return members
       .filter((m) => {
         const c = (m.prospect_contacts as unknown) as { status: string; lifecycle_stage: string } | null;
-        return c && isSendable({ status: c.status as "active" | "unsubscribed" | "bounced" | "invalid" | "do_not_contact" | "review_needed", lifecycle_stage: c.lifecycle_stage as "contact" | "opportunity" | "lead" | "customer" | "suppressed" });
+        return c && isSendable({ status: c.status as "active" | "unsubscribed" | "bounced" | "invalid" | "do_not_contact" | "review_needed", lifecycle_stage: c.lifecycle_stage as "pre_opp" | "opp" | "lead" | "customer" | "suppressed" });
       })
       .map((m) => {
         const c = (m.prospect_contacts as unknown) as { id: string; email: string; name: string | null };

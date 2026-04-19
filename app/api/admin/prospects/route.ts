@@ -164,7 +164,7 @@ export async function POST(request: Request) {
     notes:               (body.notes as string | null) ?? null,
     quality_score:       quality,
     status:              "active" as const,
-    lifecycle_stage:     "contact" as const,
+    lifecycle_stage:     "pre_opp" as const,
     reviewed:            false,
   };
 

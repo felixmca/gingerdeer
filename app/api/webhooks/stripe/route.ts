@@ -121,12 +121,12 @@ export async function POST(req: NextRequest) {
               const prospectEmail = authUserData?.user?.email;
               if (prospectEmail) {
                 const emailKey = prospectEmail.toLowerCase().trim();
-                log.db("UPDATE prospect_contacts lifecycle → customer", { email_hash: emailKey, condition: "IN (contact, opportunity, lead)" });
+                log.db("UPDATE prospect_contacts lifecycle → customer", { email_hash: emailKey, condition: "IN (pre_opp, opp, lead)" });
                 await service
                   .from("prospect_contacts")
                   .update({ lifecycle_stage: "customer", lifecycle_updated_at: new Date().toISOString() })
                   .eq("email_hash", emailKey)
-                  .in("lifecycle_stage", ["contact", "opportunity", "lead"]);
+                  .in("lifecycle_stage", ["pre_opp", "opp", "lead"]);
                 log.dbResult("prospect lifecycle → customer (best-effort)", { email: prospectEmail });
               }
             } catch (lcErr) {

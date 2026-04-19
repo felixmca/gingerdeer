@@ -167,7 +167,7 @@ export async function POST(request: Request) {
       notes:              row.notes ?? null,
       quality_score:      quality,
       status:             "active",
-      lifecycle_stage:    "contact",
+      lifecycle_stage:    "pre_opp",
       reviewed:           false,
       extract_query_id:   extractQueryId || null,
     });

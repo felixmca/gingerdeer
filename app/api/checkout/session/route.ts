@@ -354,12 +354,12 @@ export async function POST(req: NextRequest) {
     // Advance prospect lifecycle: contact/opportunity → lead
     if (user.email) {
       const emailKey = user.email.toLowerCase().trim();
-      log.db("UPDATE prospect_contacts lifecycle → lead", { email_hash: emailKey, condition: "IN (contact, opportunity)" });
+      log.db("UPDATE prospect_contacts lifecycle → lead", { email_hash: emailKey, condition: "IN (pre_opp, opp)" });
       await service
         .from("prospect_contacts")
         .update({ lifecycle_stage: "lead", lifecycle_updated_at: new Date().toISOString() })
         .eq("email_hash", emailKey)
-        .in("lifecycle_stage", ["contact", "opportunity"]);
+        .in("lifecycle_stage", ["pre_opp", "opp"]);
       log.dbResult("prospect lifecycle advanced → lead (best-effort)", { email: user.email });
     }
 

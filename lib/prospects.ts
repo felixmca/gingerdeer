@@ -57,14 +57,14 @@ export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
 // Lifecycle stages
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type LifecycleStage = "contact" | "opportunity" | "lead" | "customer" | "suppressed";
+export type LifecycleStage = "pre_opp" | "opp" | "lead" | "customer" | "suppressed";
 
 export const LIFECYCLE_STAGES: { key: LifecycleStage; label: string; description: string }[] = [
-  { key: "contact",     label: "Contact",     description: "Sourced — in the marketing database" },
-  { key: "opportunity", label: "Opportunity", description: "Clicked a tracked CTA in a campaign email" },
-  { key: "lead",        label: "Lead",        description: "Created a pending subscription or added to basket" },
-  { key: "customer",    label: "Customer",    description: "Paid for a subscription or one-off order" },
-  { key: "suppressed",  label: "Suppressed",  description: "Excluded from all sends" },
+  { key: "pre_opp",    label: "Pre-Opp",    description: "Sourced — in the marketing database" },
+  { key: "opp",        label: "Opp",        description: "Clicked a tracked CTA in a campaign email" },
+  { key: "lead",       label: "Lead",       description: "Created a pending subscription or added to basket" },
+  { key: "customer",   label: "Customer",   description: "Paid for a subscription or one-off order" },
+  { key: "suppressed", label: "Suppressed", description: "Excluded from all sends" },
 ];
 
 export const LIFECYCLE_LABELS: Record<LifecycleStage, string> = Object.fromEntries(

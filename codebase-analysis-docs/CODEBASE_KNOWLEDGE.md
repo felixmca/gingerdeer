@@ -1,8 +1,8 @@
 # Juice for Teams — Codebase Knowledge (Master Document)
 
-**INDEX_VERSION:** 2.1  
+**INDEX_VERSION:** 2.2  
 **Repo:** `juice-for-teams` (package name) — workspace folder named "Juice"; code is TypeScript/Next.js.  
-**Last fully analyzed:** 2026-04-17  
+**Last fully analyzed:** 2026-04-19  
 **Root path:** `/mnt/c/Users/felix/Desktop/Python Projects/Juice`
 
 > This document is written so any LLM or engineer with no repo access can understand the full system. All paths are relative to the repo root.
@@ -107,6 +107,12 @@ lib/
   subscription-meta.ts           # Types + display helpers for subscriptions (SubRow, SLUG_META, etc.)
   address.ts                     # Types + formatting helpers for addresses (AddressRow, addressBlock, etc.)
   email.ts                       # Resend email templates: sendStep1Email, sendQuoteEmail
+  prospects.ts                   # Types, CATEGORIES, LIFECYCLE_STAGES, helpers (isSendable, buildTrackingUrl, emailHash, computeQualityScore)
+  campaign-recipients.ts         # resolveProspectRecipients() — shared between preview + send routes
+  logger.ts                      # Structured ANSI console logger; use createLogger("route/name") in every API route
+  admin.ts                       # isAdmin(email) helper
+  stripe.ts                      # Stripe SDK instance
+  products.ts                    # Product catalogue helpers
   supabase/
     client.ts                    # Browser Supabase client (anon key)
     server.ts                    # Server Supabase client (anon key + cookies)
@@ -750,19 +756,25 @@ The admin lives at `/admin` (separate layout from `/dashboard`). All admin route
 
 ---
 
-## 18. Marketing engine (added 2026-04-17)
+## 18. Marketing engine (built 2026-04-17, extended 2026-04-19)
 
-Full spec in `codebase-analysis-docs/MARKETING_ENGINE_PROGRESS.md`.
+Full workstream tracker: `docs/workstreams/marketing-engine.md`.  
+Legacy progress doc: `codebase-analysis-docs/MARKETING_ENGINE_PROGRESS.md`.
 
-### New DB tables (run `scripts/migrate-prospects.sql`)
+### DB tables (run `scripts/migrate-prospects.sql` — safe to re-run)
 
 | Table | Purpose |
 |-------|---------|
-| `public.prospect_contacts` | Admin-sourced marketing contacts (distinct from user-facing `leads`) |
+| `public.prospect_contacts` | Admin-sourced marketing contacts (distinct from `leads`) |
 | `public.campaign_sends` | One row per contact per campaign; holds UUID `tracking_token` |
-| `public.campaign_events` | Click / unsubscribe events recorded via tracking URLs |
+| `public.campaign_events` | Click / unsubscribe / lifecycle events |
+| `public.prospect_extract_queries` | Every AI extract/research call; `extract_query_id` FK on `prospect_contacts` |
+| `public.prospect_lists` | Named lists — `list_type`: `manual` or `filter` |
+| `public.prospect_list_members` | Junction: `list_id` × `contact_id` |
 
-`email_campaigns` extended with: `campaign_type`, `category_filter[]`, `lifecycle_filter[]`, `sub_category_filter[]`, CTA fields, `preview_text`, `utm_campaign`, aggregate counters.
+`email_campaigns` extended with: `campaign_type`, `category_filter[]`, `lifecycle_filter[]`, `sub_category_filter[]`, `list_ids[]`, CTA fields, `preview_text`, `utm_campaign`, aggregate counters.
+
+`prospect_contacts` extended with: `extract_query_id` FK → `prospect_extract_queries`.
 
 ### Lifecycle model
 
@@ -770,43 +782,52 @@ Full spec in `codebase-analysis-docs/MARKETING_ENGINE_PROGRESS.md`.
 contact → [CTA click] → opportunity → [basket/pending sub] → lead → [paid] → customer
 ```
 
-Tracked via `lifecycle_stage` column on `prospect_contacts`.
+Wired in: click tracking route, `/api/checkout/session`, `/api/webhooks/stripe`.
 
 ### Audience categories (`lib/prospects.ts`)
 
 `mum` · `dad` · `flame` · `candice` · `grandad` — stored as free text (extensible).
 
-### New API routes
+### API routes
 
 | Route | Methods | Purpose |
 |-------|---------|---------|
 | `/api/admin/prospects` | GET, POST | List/create prospect contacts |
 | `/api/admin/prospects/[id]` | GET, PATCH, DELETE | Contact detail |
-| `/api/admin/prospects/import` | POST | CSV bulk import (max 2000 rows) |
-| `/api/admin/prospects/extract` | POST | Claude-powered extraction from raw text |
-| `/api/admin/campaigns` | GET, POST | Prospect campaigns |
-| `/api/admin/campaigns/[id]` | GET, PATCH, DELETE | Campaign detail |
+| `/api/admin/prospects/import` | POST | CSV bulk import (max 2000 rows); accepts `extract_query_id` |
+| `/api/admin/prospects/extract` | POST | Claude Haiku extraction/research; stores query; returns `query_id` |
+| `/api/admin/campaigns` | GET, POST | Prospect campaigns (list + create) |
+| `/api/admin/campaigns/[id]` | GET, PATCH, DELETE | Campaign detail/update/delete |
 | `/api/admin/campaigns/[id]/preview` | GET | Dry-run recipient count |
-| `/api/admin/campaigns/[id]/send` | POST | Execute send + inject tracking URLs |
-| `/api/track/click/[token]` | GET | CTA click tracking + lifecycle → opportunity + redirect |
-| `/api/track/unsubscribe/[token]` | GET | One-click unsubscribe → status = 'unsubscribed' |
+| `/api/admin/campaigns/[id]/send` | POST | Execute send + tracking URL injection |
+| `/api/admin/lists` | GET, POST | Named prospect lists |
+| `/api/admin/lists/[id]` | GET, PATCH, DELETE | List detail + resolved contacts |
+| `/api/admin/lists/[id]/members` | POST, DELETE | Add/remove contacts from manual list |
+| `/api/track/click/[token]` | GET | CTA click → lifecycle opportunity + redirect |
+| `/api/track/unsubscribe/[token]` | GET | One-click unsubscribe |
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
 | `lib/prospects.ts` | Types, CATEGORIES, LIFECYCLE_STAGES, helpers |
-| `scripts/migrate-prospects.sql` | Full DB migration for prospect tables |
+| `lib/campaign-recipients.ts` | `resolveProspectRecipients()` — shared resolver (list-based or filter-based) |
+| `lib/logger.ts` | `createLogger(route)` — structured ANSI logger for all API routes |
+| `scripts/migrate-prospects.sql` | Full DB migration (idempotent, safe to re-run) |
 | `components/admin/crm-prospects.tsx` | Prospects table + add/import/AI-extract UI |
-| `components/admin/crm-campaigns.tsx` | Campaign list + composer + send modal |
-| `components/admin/admin-sidebar.tsx` | Sidebar — includes new Marketing section |
+| `components/admin/crm-campaigns.tsx` | Campaign list + composer + list targeting |
+| `components/admin/crm-lists.tsx` | Lists management UI |
+| `components/admin/admin-sidebar.tsx` | Sidebar with Marketing section (Prospects, Campaigns, Lists) |
+
+### Important architectural note
+`resolveProspectRecipients` was previously exported from `preview/route.ts`, which broke the Vercel build (Next.js only allows HTTP method exports from route files). It now lives in `lib/campaign-recipients.ts`. **Never export non-HTTP-method functions from `app/api/` route files.**
 
 ### Environment variables added
 
 | Variable | Purpose |
 |----------|---------|
-| `ANTHROPIC_API_KEY` | Required for AI contact extraction endpoint |
+| `ANTHROPIC_API_KEY` | Required for AI extract endpoint |
 
 ---
 
-*End of CODEBASE_KNOWLEDGE.md v2.1*
+*End of CODEBASE_KNOWLEDGE.md v2.2*
